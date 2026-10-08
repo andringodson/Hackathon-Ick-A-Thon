@@ -25,6 +25,8 @@ jobs:
       AI_ENDPOINT: ${{ vars.AI_ENDPOINT }}
       TTS_ENDPOINT: ${{ vars.TTS_ENDPOINT }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      RUSHCAST_API: https://rushcast-api.vercel.app
+      INGEST_TOKEN: ${{ secrets.RUSHCAST_INGEST_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -43,9 +45,6 @@ jobs:
 
       - name: Train forecast model (processing layer)
         run: python pipeline/train.py
-        env:
-          RUSHCAST_API: https://rushcast-api.vercel.app
-          INGEST_TOKEN: ${{ secrets.RUSHCAST_INGEST_TOKEN }}
 
       - name: Quality gate (block the deploy if the model got worse)
         run: python pipeline/quality_gate.py
@@ -67,10 +66,9 @@ jobs:
           rm py.json node.json
 
       - name: Neon housekeeping (prune old rows, keep the API warm)
-        env:
-          INGEST_TOKEN: ${{ secrets.RUSHCAST_INGEST_TOKEN }}
         if: env.INGEST_TOKEN != ''
-        run: curl -fsS -X POST https://rushcast-api.vercel.app/api/health -H "Authorization: Bearer $INGEST_TOKEN"
+        run: |
+          curl -fsS -X POST "$RUSHCAST_API/api/health" -H "Authorization: Bearer $INGEST_TOKEN"
 
       - name: Supabase housekeeping (when configured)
         if: env.SUPABASE_URL != '' && env.SUPABASE_SERVICE_KEY != ''
