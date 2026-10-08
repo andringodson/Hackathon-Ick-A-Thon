@@ -16,6 +16,7 @@ const SHELL = [
   'assets/js/assistant.js',
   'assets/js/session.js',
   'assets/js/clock.js',
+  'assets/js/voice.js',
   'assets/js/config.js',
   'assets/i18n/en.json',
   'assets/icons/icon.svg',

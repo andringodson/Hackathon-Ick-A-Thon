@@ -314,6 +314,7 @@ export function mountAssistant(ctx) {
       <header class="ai-head">
         <span class="ai-avatar">${icon('spark')}</span>
         <div class="ai-head-text"><strong>${t('ai.title')}</strong><span class="ai-engine" data-engine>${t('ai.engineLocal')}</span></div>
+        <button class="icon-btn ai-call" type="button" data-ai="call" aria-label="${t('voice.call')}" title="${t('voice.call')}">${icon('phone')}</button>
         <button class="icon-btn" type="button" data-ai="speak" aria-pressed="${speak}" aria-label="${t('ai.speak')}" title="${t('ai.speak')}">${icon('volume')}</button>
         <button class="icon-btn" type="button" data-ai="clear" aria-label="${t('ai.clear')}" title="${t('ai.clear')}">${icon('trash')}</button>
         <button class="icon-btn" type="button" data-ai="close" aria-label="${t('action.close')}">${icon('x')}</button>
@@ -467,6 +468,7 @@ export function mountAssistant(ctx) {
       if (!speak) try { speechSynthesis.cancel(); } catch {}
     }
     if (act === 'mic') listen(btn);
+    if (act === 'call') { close(); ctx.onCall?.(); }
   });
   panel.addEventListener('click', (e) => {
     if (e.target.closest('.ai-card, .ai-actions a') && matchMedia('(width < 52rem)').matches) close();
@@ -502,6 +504,13 @@ export function mountAssistant(ctx) {
     open,
     close,
     ask: (q) => { open(); ask(q); },
+    /** Plain answer for the voice agent (falls through to generative tiers). */
+    answer: async (q) => {
+      const res = await ai.answer(q);
+      if (!res.needsLLM) return res;
+      const gen = await ai.generative(q).catch(() => null);
+      return gen ? { text: String(gen).trim() } : res;
+    },
     relabel: () => { fab.querySelector('.ai-fab-label').textContent = t('ai.title'); if (!panel.hidden) frame(); },
   };
 }

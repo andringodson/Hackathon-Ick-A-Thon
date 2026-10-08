@@ -11,6 +11,7 @@ import { icon, esc, toast, openSheet, closeSheet, initSheet, haptic } from './ui
 import { initFx, endSplash, redrawLogo, moveChipIndicator, burst, themeReveal } from './fx.js';
 import { mountAssistant } from './assistant.js';
 import { createSession } from './session.js';
+import { createVoice } from './voice.js';
 
 const DATA = new URL('../../data/', import.meta.url);
 const REPO = 'https://github.com/andringodson/Hackathon-Ick-A-Thon';
@@ -30,9 +31,11 @@ let store;
 let view = null; // { route, update?, cleanup? }
 let deferredInstall = null;
 let inAppNav = 0;
+let healAttempts = 0;
 let bg = null; // live background api
 let assistant = null;
 let session = null;
+let voice = null;
 let sessionSheetOpen = false;
 
 // ---------- Live session (multi-device) ----------
@@ -180,6 +183,10 @@ function onSessionEvent(type, data) {
   if (type === 'join') { toast(t('session.someoneJoined', { who: data.who }), { type: 'bell' }); haptic(10); }
   if (type === 'report') { toast(t('session.someoneReported', { who: data.who, name: facShort(fac), level: t(['fac.reportEmpty', 'fac.reportModerate', 'fac.reportCrowded'][data.level]) }), { type: 'bell' }); view?.update?.(); }
   if (type === 'rush') {
+    if (!data.self && session.state.role === 'guest' && voice?.alert(t('session.rushAlert', { name: facName(fac) }), t('session.title'))) {
+      view?.update?.();
+      return;
+    }
     toast(t('session.rushAlert', { name: facName(fac) }), { type: 'error', duration: 5000 });
     haptic(30);
     view?.update?.();
@@ -385,6 +392,7 @@ function homeView(root) {
         <div class="btn-row">
           <a class="btn btn-primary" href="#/live">${icon('live')}${t('action.seeLive')}</a>
           <a class="btn" href="#/map">${icon('map')}${t('action.openMap')}</a>
+          <button class="btn" type="button" data-action="call">${icon('phone')}${t('voice.call')}</button>
           <button class="btn btn-ghost" type="button" data-action="install" hidden>${icon('download')}${t('action.install')}</button>
         </div>
       </div>
@@ -711,6 +719,10 @@ function facilityView(root, id) {
             <div><strong>${t('fac.notify')}</strong><p class="small muted">${t('fac.notifySub')}</p></div>
             <button class="switch" type="button" role="switch" aria-checked="${watching(fac.id)}" data-watch="${fac.id}" aria-label="${t('fac.notify')}"></button>
           </div>
+          <div class="toggle-row">
+            <div><strong>${icon('phone', 'h-icon-plain')} ${t('voice.ringMe')}</strong><p class="small muted">${t('voice.ringMeSub')}</p></div>
+            <button class="switch" type="button" role="switch" aria-checked="${voice?.enabled ?? true}" data-ringme aria-label="${t('voice.ringMe')}"></button>
+          </div>
         </div>
         <div class="card"><h2 class="h3" style="margin-block-end:var(--space-xs)">${t('fac.recent')}</h2><ul class="feed" data-feed></ul></div>
         <div class="card">
@@ -770,6 +782,8 @@ function facilityView(root, id) {
     }
     const sw = e.target.closest('[data-watch]');
     if (sw) toggleWatch(fac, sw);
+    const ringBtn = e.target.closest('[data-ringme]');
+    if (ringBtn) { voice.setEnabled(!voice.enabled); ringBtn.setAttribute('aria-checked', String(voice.enabled)); haptic(8); }
     const favBtn = e.target.closest('[data-fav]');
     if (favBtn) toggleFav(fac.id, favBtn);
     if (e.target.closest('[data-share]')) shareFacility(fac);
@@ -973,11 +987,12 @@ async function checkWatches() {
       try {
         const reg = await navigator.serviceWorker?.getRegistration();
         if (reg) {
-          await reg.showNotification('Rushcast', { body: msg, icon: 'assets/icons/icon-192.png', badge: 'assets/icons/badge-96.png', tag: `quiet-${id}`, data: { url: `#/f/${id}` } });
+          await reg.showNotification('Rush AI · Rushcast', { body: msg, icon: 'assets/icons/icon-192.png', badge: 'assets/icons/badge-96.png', tag: `quiet-${id}`, requireInteraction: true, vibrate: [400, 200, 400, 200, 400], data: { url: `#/f/${id}` } });
           shown = true;
         }
       } catch {}
     }
+    if (!document.hidden && voice?.alert(msg, facName(fac))) continue;
     if (!shown || !document.hidden) toast(msg, { type: 'bell', duration: 6000 });
   }
   saveWatch(remaining);
@@ -1046,7 +1061,16 @@ function render(initial = false) {
     if (!initial) redrawLogo();
     renderNav(route);
     const views = { home: homeView, live: liveView, map: mapView, insights: insightsView, about: aboutView, facility: (el) => facilityView(el, id) };
-    view = { route, ...(views[route](fresh) || {}) };
+    try {
+      view = { route, ...(views[route](fresh) || {}) };
+      healAttempts = 0;
+    } catch (err) {
+      // Self-healing: show a recovery card, then retry the view once on its own.
+      console.error('view failed', err);
+      fresh.innerHTML = `<div class="card"><p>${t('heal.retrying')}</p></div>`;
+      view = { route };
+      if (healAttempts++ < 2) setTimeout(() => render(true), 1200);
+    }
     syncInstall();
     window.scrollTo({ top: 0, behavior: 'instant' });
     if (!initial) fresh.focus({ preventScroll: true });
@@ -1150,6 +1174,7 @@ function bindGlobal() {
     if (a?.dataset.action === 'lang') openLangSheet();
     if (a?.dataset.action === 'install') install();
     if (a?.dataset.action === 'session') openSessionSheet();
+    if (a?.dataset.action === 'call') voice?.call();
     const sb = e.target.closest('[data-session]');
     if (sb) {
       const act = sb.dataset.session;
@@ -1262,9 +1287,24 @@ async function boot() {
     navigate: (hash) => (location.hash = hash),
     report: (id, level) => store.submit(id, level),
     watch: (id) => { if (!watching(id)) saveWatch([...watchList(), id]); },
+    onCall: () => voice?.call(),
   });
+  voice = createVoice({ t, icon, esc, lang, ask: (q) => assistant.answer(q) });
   pushEnergy();
   setInterval(tick, TICK_MS);
+  // Pick up a freshly retrained model without a reload.
+  setInterval(async () => {
+    try {
+      const res = await fetch(new URL('model.json', DATA), { cache: 'no-store' });
+      const next = await res.json();
+      if (next.generated_at !== engine.model.generated_at && next.facilities) {
+        engine.model = next;
+        view?.update?.();
+        toast(t('heal.model'), { type: 'bell' });
+      }
+    } catch {}
+  }, 30 * 60000);
+  addEventListener('unhandledrejection', (e) => console.warn('handled:', e.reason));
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register(new URL('../../sw.js', import.meta.url), { scope: new URL('../../', import.meta.url).pathname }).catch(() => {});
   }
