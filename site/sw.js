@@ -12,6 +12,7 @@ const SHELL = [
   'assets/js/charts.js',
   'assets/js/ui.js',
   'assets/js/i18n.js',
+  'assets/js/fx.js',
   'assets/js/config.js',
   'assets/i18n/en.json',
   'assets/icons/icon.svg',

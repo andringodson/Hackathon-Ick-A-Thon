@@ -6,6 +6,7 @@ import { startBackground } from './bg.js';
 import { forecastChart, sparkline, heatmap, attachTips } from './charts.js';
 import { LANGS, detectLang, setLang, lang, t, formatTime, formatDay, formatDate, formatDateTime, formatHour, formatNumber, relativeMinutes } from './i18n.js';
 import { icon, esc, toast, openSheet, closeSheet, initSheet, haptic } from './ui.js';
+import { initFx, endSplash, redrawLogo, moveChipIndicator, burst, themeReveal } from './fx.js';
 
 const DATA = new URL('../../data/', import.meta.url);
 const REPO = 'https://github.com/andringodson/Hackathon-Ick-A-Thon';
@@ -99,7 +100,13 @@ function trendHtml(trend) {
 /** Patch every [data-b] inside a [data-fac] root with fresh values. */
 function bindFac(root, fac, st) {
   const lvl = st.est.level;
+  const prevLevel = root.dataset.level;
   root.dataset.level = lvl;
+  if (prevLevel && prevLevel !== lvl) {
+    root.classList.remove('lvl-flash');
+    void root.offsetWidth;
+    root.classList.add('lvl-flash');
+  }
   for (const el of $$('[data-b]', root)) {
     switch (el.dataset.b) {
       case 'pct': tween(el, st.est.open ? st.est.pct : null); break;
@@ -249,7 +256,8 @@ function liveView(root) {
       <span class="updated" style="--i:1" data-updated>${t('time.updated', { time: formatTime(new Date()) })}</span>
     </div>
     <div class="toolbar">
-      <div class="chips" role="toolbar" aria-label="${t('cat.all')}">
+      <div class="chips" role="toolbar" aria-label="${t('cat.all')}" data-chips>
+        <span class="chip-ind" aria-hidden="true"></span>
         ${CATS.map((c) => `<button class="chip" type="button" data-cat="${c}" aria-pressed="${ui.cat === c}">${t(`cat.${c}`)}</button>`).join('')}
       </div>
       <label class="sr-only" for="sort">${t('sort.label')}</label>
@@ -266,8 +274,11 @@ function liveView(root) {
     if (!chip) return;
     ui.cat = chip.dataset.cat;
     $$('[data-cat]', root).forEach((c) => c.setAttribute('aria-pressed', c === chip));
+    moveChipIndicator($('[data-chips]', root));
     render();
   });
+  requestAnimationFrame(() => moveChipIndicator($('[data-chips]', root), true));
+  document.fonts?.ready.then(() => moveChipIndicator($('[data-chips]', root), true));
   $('[data-sort]', root).addEventListener('change', (e) => {
     ui.sort = e.target.value;
     render();
@@ -650,6 +661,7 @@ async function sendReport(facId, level, btn) {
   btn?.setAttribute('aria-pressed', 'true');
   try {
     await store.submit(facId, level);
+    burst(btn);
     toast(t('report.thanks'));
     if ($('[data-sheet]').open) closeSheet();
   } catch (err) {
@@ -770,6 +782,7 @@ function render(initial = false) {
     root.replaceWith(fresh);
     document.body.dataset.route = route;
     bg?.setRoute(route);
+    if (!initial) redrawLogo();
     renderNav(route);
     const views = { home: homeView, live: liveView, map: mapView, insights: insightsView, about: aboutView, facility: (el) => facilityView(el, id) };
     view = { route, ...(views[route](fresh) || {}) };
@@ -838,8 +851,7 @@ function toggleTheme() {
     applyThemeColor();
     view?.update?.();
   };
-  if (document.startViewTransition) document.startViewTransition(apply);
-  else apply();
+  themeReveal($('[data-action="theme"]'), apply);
 }
 
 function openLangSheet() {
@@ -916,7 +928,9 @@ function bindGlobal() {
 }
 
 async function boot() {
+  const bootStart = performance.now();
   bg = startBackground($('#flow'));
+  initFx();
   initSheet();
   try {
     const [, eng] = await Promise.all([setLang(detectLang()), Engine.load(DATA)]);
@@ -925,12 +939,14 @@ async function boot() {
   } catch (err) {
     console.error(err);
     $('#view').innerHTML = `<div class="card"><p>${t('error.load')}</p></div>`;
+    endSplash(bootStart);
     return;
   }
   applyThemeColor();
   bindGlobal();
   store.onChange(() => view?.update?.());
   render(true);
+  endSplash(bootStart);
   pushEnergy();
   setInterval(tick, TICK_MS);
   if ('serviceWorker' in navigator) {
