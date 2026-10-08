@@ -171,7 +171,71 @@ class SupabaseStore extends BaseStore {
   }
 }
 
+/** Live mode on the Rushcast API (Vercel functions + Neon Postgres, both free). */
+class ApiStore extends BaseStore {
+  constructor(engine, base) {
+    super(engine);
+    this.mode = 'live';
+    this.base = base.replace(/\/$/, '');
+    this.remote = [];
+    this.timer = 0;
+  }
+
+  async pull() {
+    const res = await fetch(`${this.base}/api/state`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`state ${res.status}`);
+    const data = await res.json();
+    const before = this.remote.length && this.remote[0].id;
+    this.remote = data.reports.map((r) => ({ id: r.id, facility_id: r.facility_id, level: r.level, at: new Date(r.created_at) }));
+    this.engine.readings.clear();
+    for (const r of data.readings) this.engine.readings.set(r.facility_id, { people: r.people, ts: new Date(r.ts) });
+    // Real sensor feed when present; otherwise keep the simulated sensor so the board is never blank.
+    this.engine.simulateSensor = !data.readings.length;
+    if (before !== (this.remote[0] && this.remote[0].id)) this.emit('reports');
+  }
+
+  async init() {
+    await this.pull();
+    const loop = async () => {
+      if (!document.hidden) await this.pull().catch(() => {});
+      this.timer = setTimeout(loop, 8000);
+    };
+    this.timer = setTimeout(loop, 8000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) this.pull().catch(() => {}); });
+    return this;
+  }
+
+  reportsFor(facilityId) {
+    const cutoff = Date.now() - KEEP_MS;
+    const mine = this.mine.filter((r) => r.facility_id === facilityId);
+    const remote = this.remote.filter((r) => r.facility_id === facilityId && r.at > cutoff && !mine.some((m) => m.remoteId === r.id));
+    return [...mine, ...remote].sort((a, b) => b.at - a.at);
+  }
+
+  async submit(facilityId, level) {
+    if (this.cooldownLeft(facilityId) > 0) throw Object.assign(new Error('rate_limited'), { code: 'rate_limited' });
+    const res = await fetch(`${this.base}/api/report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ facility_id: facilityId, level, device_id: deviceId() }),
+    }).catch(() => null);
+    if (!res || !res.ok) throw Object.assign(new Error('report failed'), { code: res && res.status === 429 ? 'rate_limited' : 'failed' });
+    const row = await res.json();
+    this.rememberMine(facilityId, level);
+    this.mine[this.mine.length - 1].remoteId = row.id;
+    this.saveLocal();
+    this.emit('reports');
+  }
+}
+
 export async function createStore(engine) {
+  if (!CONFIG.supabaseUrl && CONFIG.apiBase) {
+    try {
+      return await new ApiStore(engine, CONFIG.apiBase).init();
+    } catch (err) {
+      console.warn('Rushcast API unavailable, using demo data:', err);
+    }
+  }
   if (CONFIG.supabaseUrl && CONFIG.supabaseAnonKey) {
     try {
       const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');

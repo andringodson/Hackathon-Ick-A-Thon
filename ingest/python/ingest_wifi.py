@@ -68,10 +68,28 @@ def aggregate(rows, ap_map: dict[str, str], calib) -> list[dict]:
     return readings
 
 
+def upload_api(readings: list[dict]) -> bool:
+    """Rushcast API (Vercel + Neon): RUSHCAST_API + INGEST_TOKEN."""
+    api, token = os.environ.get("RUSHCAST_API"), os.environ.get("INGEST_TOKEN")
+    if not api or not token:
+        return False
+    req = urllib.request.Request(
+        f"{api.rstrip('/')}/api/readings",
+        data=json.dumps(readings).encode(),
+        method="POST",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        print(f"Uploaded {len(readings)} readings to {api} (HTTP {resp.status})")
+    return True
+
+
 def upload(readings: list[dict]) -> None:
+    if upload_api(readings):
+        return
     url, key = os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_SERVICE_KEY")
     if not url or not key:
-        sys.exit("Set SUPABASE_URL and SUPABASE_SERVICE_KEY (service role, keep it server-side).")
+        sys.exit("Set RUSHCAST_API + INGEST_TOKEN (Rushcast API), or SUPABASE_URL + SUPABASE_SERVICE_KEY.")
     req = urllib.request.Request(
         f"{url.rstrip('/')}/rest/v1/readings",
         data=json.dumps(readings).encode(),

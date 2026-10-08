@@ -89,8 +89,19 @@ export function aggregate(rows, apMap, calib) {
 }
 
 async function upload(readings) {
+  const { RUSHCAST_API: api, INGEST_TOKEN: token } = process.env;
+  if (api && token) {
+    const res = await fetch(`${api.replace(/\/$/, '')}/api/readings`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(readings),
+    });
+    if (!res.ok) throw new Error(`Upload failed: HTTP ${res.status} ${await res.text()}`);
+    console.log(`Uploaded ${readings.length} readings to ${api} (HTTP ${res.status})`);
+    return;
+  }
   const { SUPABASE_URL: url, SUPABASE_SERVICE_KEY: key } = process.env;
-  if (!url || !key) throw new Error('Set SUPABASE_URL and SUPABASE_SERVICE_KEY (service role, keep it server-side).');
+  if (!url || !key) throw new Error('Set RUSHCAST_API + INGEST_TOKEN (Rushcast API), or SUPABASE_URL + SUPABASE_SERVICE_KEY.');
   const res = await fetch(`${url.replace(/\/$/, '')}/rest/v1/readings`, {
     method: 'POST',
     headers: {

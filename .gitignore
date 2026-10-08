@@ -10,3 +10,5 @@ Thumbs.db
 /shots/
 *.local.mjs
 tests/node_modules/
+.vercel/
+server/.env.local

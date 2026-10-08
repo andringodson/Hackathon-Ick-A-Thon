@@ -123,8 +123,32 @@ def calibrate(devices: np.ndarray, people: np.ndarray, rng: np.random.Generator)
 # Optional: real readings from Supabase
 # --------------------------------------------------------------------------
 
+_API_CACHE: list | None = None
+
+
+def fetch_api_rows() -> list | None:
+    """All readings for the last WEEKS weeks from the Rushcast API (one request, cached)."""
+    global _API_CACHE
+    api, token = os.environ.get("RUSHCAST_API"), os.environ.get("INGEST_TOKEN")
+    if not api or not token:
+        return None
+    if _API_CACHE is None:
+        req = urllib.request.Request(f"{api.rstrip('/')}/api/readings?days={WEEKS * 7}", headers={"Authorization": f"Bearer {token}"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                _API_CACHE = json.load(resp)
+        except Exception as exc:
+            print(f"  ! api fetch failed: {exc}")
+            _API_CACHE = []
+    return _API_CACHE
+
+
 def fetch_real(fac_id: str, cap: int) -> np.ndarray | None:
+    api_rows = fetch_api_rows()
     url, key = os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_SERVICE_KEY")
+    if api_rows is not None:
+        rows = [r for r in api_rows if r["facility_id"] == fac_id]
+        return grid_from_rows(rows, cap)
     if not url or not key:
         return None
     since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(weeks=WEEKS)).isoformat()
@@ -145,6 +169,11 @@ def fetch_real(fac_id: str, cap: int) -> np.ndarray | None:
     except Exception as exc:  # network or auth problems fall back to synthetic
         print(f"  ! supabase fetch failed for {fac_id}: {exc}")
         return None
+    return grid_from_rows(rows, cap)
+
+
+def grid_from_rows(rows: list, cap: int) -> np.ndarray | None:
+    """Needs ~2 weeks of readings before real data replaces the synthetic history."""
     if len(rows) < 14 * 24 * 2:
         return None
     ist = dt.timezone(dt.timedelta(hours=5, minutes=30))

@@ -139,8 +139,15 @@ async function checkAI(browser, base) {
     await page.waitForSelector('.ai-fab', { timeout: 20000 });
     await page.waitForFunction(() => !document.querySelector('[data-splash]'), { timeout: 20000 });
     await sleep(1600); // let the logo fly-in transition finish
-    await page.click('.ai-fab');
-    await page.waitForSelector('.ai-input input', { visible: true, timeout: 10000 });
+    for (let attempt = 0; ; attempt++) {
+      // Only click when closed: the button toggles, so a slow open must not be re-clicked shut.
+      const isOpen = await page.$eval('.ai-panel', (el) => !el.hidden).catch(() => false);
+      if (!isOpen) await page.click('.ai-fab');
+      const opened = await page.waitForSelector('.ai-input input', { visible: true, timeout: 4000 }).then(() => true, () => false);
+      if (opened) break;
+      if (attempt >= 2) throw new Error('AI panel did not open after 3 clicks');
+      await sleep(1000);
+    }
   } catch (e) {
     fail('AI panel opens', e.message);
     await page.close();
@@ -208,9 +215,40 @@ async function checkSession(base) {
   }
 }
 
+// ---------- 5. backends: live database API and neural voice API ----------
+async function checkBackends() {
+  const strict = !!process.env.BASE; // watchdog fails on outages; the deploy gate only warns
+  const report = (ok, name, detail) => (ok ? pass(name, detail) : (strict ? fail : warn)(name, detail));
+  const probe = async (name, url, test) => {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
+      const detail = await test(res);
+      report(true, name, detail);
+    } catch (e) {
+      report(false, name, e.message);
+    }
+  };
+  await probe('database API health', 'https://rushcast-api.vercel.app/api/health', async (res) => {
+    const d = await res.json();
+    if (!d.ok) throw new Error(JSON.stringify(d));
+    return `db ${d.db_ms} ms, ${d.reports_24h} reports / 24 h`;
+  });
+  await probe('voice API health', 'https://rush-voice-agent.vercel.app/api/health', async (res) => {
+    const d = await res.json();
+    if (!d.ok) throw new Error(JSON.stringify(d));
+    return `tts ${d.ttsMs} ms`;
+  });
+  await probe('neural voice audio', 'https://rush-voice-agent.vercel.app/api/tts?text=Rushcast%20self%20check&lang=en&emotion=friendly', async (res) => {
+    const buf = await res.arrayBuffer();
+    if (!res.ok || buf.byteLength < 2000) throw new Error(`HTTP ${res.status}, ${buf.byteLength} bytes`);
+    return `${buf.byteLength} bytes mp3`;
+  });
+}
+
 // ---------- run ----------
 const started = Date.now();
 await checkI18n();
+await checkBackends();
 let srv = null;
 let base = process.env.BASE;
 if (!base) ({ srv, base } = await serve());

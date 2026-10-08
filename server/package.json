@@ -1,0 +1,6 @@
+{
+  "name": "rushcast-api",
+  "private": true,
+  "type": "module",
+  "dependencies": { "@neondatabase/serverless": "^1.0.0" }
+}

@@ -82,7 +82,20 @@ cd site && python -m http.server 8000
 # open http://localhost:8000
 ```
 
-## Go live with a free database (Supabase, free forever plan)
+## Live backend (running now, all free-forever plans, no card)
+
+| Piece | Where | Free plan |
+| --- | --- | --- |
+| Web app (PWA) | GitHub Pages | free for public repos |
+| Database | **Neon Postgres** (Singapore) via Vercel Marketplace | 0.5 GB, scales to zero, never paused/deleted |
+| Data API | **rushcast-api.vercel.app** (`server/`): `/api/state`, `/api/report`, `/api/readings`, `/api/health` | Vercel Hobby |
+| Neural voice + chat | **rush-voice-agent.vercel.app** ([repo](https://github.com/andringodson/rush-voice-agent)) | Vercel Hobby |
+| Multi-device sync | ntfy.sh public relay | free, no account |
+| Training, tests, watchdog | GitHub Actions | free for public repos |
+
+Reports are rate-limited in the database (1 per place per 3 min, 40/hour per device), the API only accepts the site's origin, and sensor ingest needs the `INGEST_TOKEN` secret (stored in Vercel and as the `RUSHCAST_INGEST_TOKEN` GitHub secret, never in code). Push Wi-Fi counts with `RUSHCAST_API=https://rushcast-api.vercel.app INGEST_TOKEN=… python ingest/python/ingest_wifi.py --csv export.csv`; after two weeks of readings the model trains on real data automatically.
+
+## Alternative: Supabase (Postgres + realtime)
 
 Supabase's free plan is permanent (no card, no trial clock): 500 MB Postgres, realtime with 200 concurrent connections. Its one caveat — projects pause after 7 days without activity — is handled by the scheduled workflow, which calls the database every 6 hours.
 
