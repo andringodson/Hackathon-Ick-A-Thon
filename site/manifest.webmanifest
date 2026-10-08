@@ -1,0 +1,32 @@
+{
+  "id": "./",
+  "name": "Rushcast · Campus Crowd Predictor",
+  "short_name": "Rushcast",
+  "description": "Live crowd levels, wait times and forecasts for every campus hotspot.",
+  "start_url": "./#/",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#070b14",
+  "theme_color": "#070b14",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["education", "utilities", "navigation"],
+  "icons": [
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "assets/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Live crowd board", "short_name": "Live", "url": "./#/live", "icons": [{ "src": "assets/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Campus map", "short_name": "Map", "url": "./#/map", "icons": [{ "src": "assets/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Canteen", "short_name": "Canteen", "url": "./#/f/canteen", "icons": [{ "src": "assets/icons/icon-192.png", "sizes": "192x192" }] }
+  ],
+  "screenshots": [
+    { "src": "assets/screens/mobile-home.png", "sizes": "780x1688", "type": "image/png", "form_factor": "narrow", "label": "Home: live campus pulse" },
+    { "src": "assets/screens/mobile-detail.png", "sizes": "780x1688", "type": "image/png", "form_factor": "narrow", "label": "Facility forecast" },
+    { "src": "assets/screens/desktop-live.png", "sizes": "1440x900", "type": "image/png", "form_factor": "wide", "label": "Live crowd board" }
+  ]
+}

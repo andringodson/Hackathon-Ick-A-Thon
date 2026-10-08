@@ -107,3 +107,4 @@ language sql security definer set search_path = public as $$
   delete from public.readings where ts         < now() - interval '120 days';
 $$;
 revoke all on function public.prune_old() from public, anon, authenticated;
+grant execute on function public.prune_old() to service_role;
