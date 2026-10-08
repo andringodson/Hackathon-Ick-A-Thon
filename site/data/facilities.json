@@ -1,0 +1,196 @@
+{
+  "campus": "Demo Engineering Campus",
+  "timezone": "Asia/Kolkata",
+  "calendar": [
+    { "type": "deadline", "label": "Assignment submissions", "from": "2026-10-08", "to": "2026-10-09" },
+    { "type": "deadline", "label": "Lab record submissions", "from": "2026-10-22", "to": "2026-10-23" },
+    { "type": "deadline", "label": "Mini-project reviews", "from": "2026-11-05", "to": "2026-11-06" },
+    { "type": "exam", "label": "End-semester exam prep", "from": "2026-11-23", "to": "2026-12-05" }
+  ],
+  "levels": [
+    { "id": "quiet", "label": "Quiet", "max": 40 },
+    { "id": "moderate", "label": "Moderate", "max": 75 },
+    { "id": "packed", "label": "Packed", "max": 101 }
+  ],
+  "facilities": [
+    {
+      "id": "canteen",
+      "name": "Main Canteen",
+      "short": "Canteen",
+      "category": "food",
+      "icon": "food",
+      "where": "Block A · Ground floor",
+      "capacity": 220,
+      "metric": "wait",
+      "servers": 4,
+      "serviceMin": 1.1,
+      "hours": { "weekday": [[7.5, 20]], "saturday": [[8, 16]], "sunday": [[9, 14]] },
+      "base": 0.08,
+      "peaks": {
+        "weekday": [[8.4, 0.35, 0.3], [10.65, 0.22, 0.45], [13.1, 0.6, 0.8], [16.3, 0.45, 0.45], [18.5, 0.5, 0.2]],
+        "saturday": [[9, 0.5, 0.25], [13, 0.7, 0.45]],
+        "sunday": [[12.8, 0.8, 0.3]]
+      },
+      "sensitivity": { "deadline": 0, "exam": -0.1 },
+      "map": { "x": 300, "y": 360 }
+    },
+    {
+      "id": "mess",
+      "name": "Hostel Mess",
+      "short": "Mess",
+      "category": "food",
+      "icon": "bowl",
+      "where": "Hostel Zone · Dining hall",
+      "capacity": 320,
+      "metric": "wait",
+      "servers": 6,
+      "serviceMin": 0.8,
+      "hours": { "weekday": [[7, 9.5], [12, 14.5], [19, 21.75]], "saturday": [[7.5, 10], [12, 14.5], [19, 21.75]], "sunday": [[8, 10.5], [12.5, 14.5], [19, 21.75]] },
+      "base": 0.05,
+      "peaks": {
+        "weekday": [[7.9, 0.45, 0.7], [13.0, 0.5, 0.85], [20.2, 0.55, 0.8]],
+        "saturday": [[8.8, 0.6, 0.55], [13.2, 0.5, 0.75], [20.2, 0.55, 0.75]],
+        "sunday": [[9.3, 0.6, 0.5], [13.4, 0.5, 0.7], [20.2, 0.55, 0.7]]
+      },
+      "sensitivity": { "deadline": 0, "exam": 0.05 },
+      "map": { "x": 820, "y": 150 }
+    },
+    {
+      "id": "food-court",
+      "name": "Food Court & Juice Bar",
+      "short": "Food Court",
+      "category": "food",
+      "icon": "cup",
+      "where": "Student Centre · Level 1",
+      "capacity": 110,
+      "metric": "wait",
+      "servers": 3,
+      "serviceMin": 1.6,
+      "hours": { "weekday": [[9, 21]], "saturday": [[9, 21]], "sunday": [[10, 20]] },
+      "base": 0.07,
+      "peaks": {
+        "weekday": [[11, 0.4, 0.35], [13.3, 0.6, 0.65], [16.5, 0.7, 0.7], [19.5, 0.8, 0.45]],
+        "saturday": [[13, 0.8, 0.5], [17.5, 1.0, 0.6]],
+        "sunday": [[13, 0.8, 0.35], [17.5, 1.0, 0.5]]
+      },
+      "sensitivity": { "deadline": 0, "exam": -0.15 },
+      "map": { "x": 560, "y": 420 }
+    },
+    {
+      "id": "library",
+      "name": "Central Library",
+      "short": "Library",
+      "category": "study",
+      "icon": "book",
+      "where": "Knowledge Centre · Floors 1–3",
+      "capacity": 420,
+      "metric": "seats",
+      "hours": { "weekday": [[8, 22]], "saturday": [[9, 17]], "sunday": [[10, 16]] },
+      "base": 0.1,
+      "peaks": {
+        "weekday": [[10.5, 1.2, 0.3], [14.5, 1.3, 0.55], [19, 1.5, 0.6]],
+        "saturday": [[12, 1.8, 0.45]],
+        "sunday": [[12.5, 1.6, 0.35]]
+      },
+      "sensitivity": { "deadline": 0.15, "exam": 0.45 },
+      "map": { "x": 470, "y": 170 }
+    },
+    {
+      "id": "lab",
+      "name": "Central Computer Lab",
+      "short": "Computer Lab",
+      "category": "study",
+      "icon": "screen",
+      "where": "Block C · Level 2",
+      "capacity": 140,
+      "metric": "seats",
+      "hours": { "weekday": [[8, 20]], "saturday": [[9, 13]], "sunday": [] },
+      "base": 0.08,
+      "peaks": {
+        "weekday": [[9.5, 0.8, 0.5], [14.5, 1.0, 0.6], [17.5, 0.8, 0.45]],
+        "saturday": [[11, 1.0, 0.4]]
+      },
+      "sensitivity": { "deadline": 0.35, "exam": 0.1 },
+      "map": { "x": 680, "y": 280 }
+    },
+    {
+      "id": "print",
+      "name": "Print & Xerox Centre",
+      "short": "Print Shop",
+      "category": "services",
+      "icon": "printer",
+      "where": "Block B · Near main stairs",
+      "capacity": 28,
+      "metric": "wait",
+      "servers": 2,
+      "serviceMin": 1.4,
+      "hours": { "weekday": [[8.5, 18.5]], "saturday": [[9, 14]], "sunday": [] },
+      "base": 0.06,
+      "peaks": {
+        "weekday": [[8.8, 0.3, 0.75], [10.6, 0.2, 0.5], [13.2, 0.45, 0.85], [16.6, 0.4, 0.5]],
+        "saturday": [[10.5, 0.8, 0.45]]
+      },
+      "sensitivity": { "deadline": 0.6, "exam": 0.2 },
+      "map": { "x": 380, "y": 270 }
+    },
+    {
+      "id": "stationery",
+      "name": "Stationery Store",
+      "short": "Stationery",
+      "category": "services",
+      "icon": "pencil",
+      "where": "Block B · Ground floor",
+      "capacity": 18,
+      "metric": "wait",
+      "servers": 1,
+      "serviceMin": 1.0,
+      "hours": { "weekday": [[8.5, 18]], "saturday": [[9, 14]], "sunday": [] },
+      "base": 0.06,
+      "peaks": {
+        "weekday": [[8.7, 0.3, 0.5], [13, 0.5, 0.6], [16.5, 0.4, 0.35]],
+        "saturday": [[11, 0.8, 0.35]]
+      },
+      "sensitivity": { "deadline": 0.3, "exam": 0.25 },
+      "map": { "x": 240, "y": 240 }
+    },
+    {
+      "id": "admin",
+      "name": "Admin & Fee Office",
+      "short": "Admin Office",
+      "category": "services",
+      "icon": "desk",
+      "where": "Admin Block · Counter hall",
+      "capacity": 45,
+      "metric": "wait",
+      "servers": 3,
+      "serviceMin": 4.5,
+      "hours": { "weekday": [[9.5, 13], [14, 16.5]], "saturday": [[9.5, 12.5]], "sunday": [] },
+      "base": 0.08,
+      "peaks": {
+        "weekday": [[9.9, 0.5, 0.6], [14.3, 0.5, 0.5]],
+        "saturday": [[10.2, 0.6, 0.45]]
+      },
+      "sensitivity": { "deadline": 0.1, "exam": 0.15 },
+      "map": { "x": 140, "y": 130 }
+    },
+    {
+      "id": "gym",
+      "name": "Fitness Centre",
+      "short": "Gym",
+      "category": "fitness",
+      "icon": "dumbbell",
+      "where": "Sports Complex · Hall 2",
+      "capacity": 60,
+      "metric": "seats",
+      "hours": { "weekday": [[6, 9], [16, 21]], "saturday": [[6.5, 10], [16, 20]], "sunday": [[7, 10]] },
+      "base": 0.08,
+      "peaks": {
+        "weekday": [[7, 0.6, 0.6], [18.3, 0.9, 0.85]],
+        "saturday": [[8, 0.8, 0.55], [17.5, 1.0, 0.6]],
+        "sunday": [[8.2, 0.8, 0.5]]
+      },
+      "sensitivity": { "deadline": -0.15, "exam": -0.3 },
+      "map": { "x": 860, "y": 470 }
+    }
+  ]
+}
