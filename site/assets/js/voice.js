@@ -85,24 +85,39 @@ export function createVoice(ctx) {
       setTimeout(resolve, 1500 + text.length * 90);
     });
   }
+  // Typed replies when there's no recognizer, or the mic is denied/unavailable.
+  let typed = !SpeechRec;
+  const FATAL = ['not-allowed', 'service-not-allowed', 'audio-capture', 'network', 'language-not-supported'];
+  function waitTyped(resolve) {
+    setState('listening');
+    const form = el?.querySelector('[data-call-type]');
+    if (form) form.hidden = false;
+    el?.querySelector('[data-call-input]')?.focus();
+    pendingType = resolve;
+  }
   function listen() {
     return new Promise((resolve) => {
-      if (!SpeechRec) { setState('listening'); el?.querySelector('[data-call-input]')?.focus(); pendingType = resolve; return; }
+      if (typed) { waitTyped(resolve); return; }
       rec = new SpeechRec();
       rec.lang = ctx.lang().locale;
       rec.interimResults = true;
       rec.maxAlternatives = 1;
       let finalText = '';
+      let fatal = false;
       rec.onresult = (ev) => {
         const r = ev.results[ev.results.length - 1];
         caption('you', r[0].transcript, !r.isFinal);
         if (r.isFinal) finalText = r[0].transcript;
       };
-      rec.onerror = () => {};
-      rec.onend = () => { rec = null; resolve(finalText.trim()); };
+      rec.onerror = (e) => { if (FATAL.includes(e.error)) fatal = true; };
+      rec.onend = () => {
+        rec = null;
+        if (fatal) { typed = true; waitTyped(resolve); return; }
+        resolve(finalText.trim());
+      };
       setState('listening');
       chirp(true);
-      try { rec.start(); } catch { resolve(''); }
+      try { rec.start(); } catch { typed = true; waitTyped(resolve); }
     });
   }
   let pendingType = null;
