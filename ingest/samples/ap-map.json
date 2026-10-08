@@ -1,0 +1,16 @@
+{
+  "BLK-A-GF-AP01": "canteen",
+  "BLK-A-GF-AP02": "canteen",
+  "HST-DINE-AP01": "mess",
+  "HST-DINE-AP02": "mess",
+  "HST-DINE-AP03": "mess",
+  "STU-L1-AP04": "food-court",
+  "KC-F1-AP01": "library",
+  "KC-F2-AP01": "library",
+  "KC-F3-AP01": "library",
+  "BLK-C-L2-AP07": "lab",
+  "BLK-B-GF-AP03": "print",
+  "BLK-B-GF-AP04": "stationery",
+  "ADM-HALL-AP01": "admin",
+  "SPT-H2-AP01": "gym"
+}
