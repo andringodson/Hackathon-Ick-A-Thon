@@ -409,7 +409,7 @@ p { margin: 0; text-wrap: pretty; }
 .card-go { width: 18px; height: 18px; margin-inline-start: auto; color: var(--muted); transition: transform 200ms var(--ease-out), color 160ms ease; flex: none; }
 
 .grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17.5rem), 1fr)); gap: var(--space-s); }
-.grid-kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: var(--space-s); }
+.grid-kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.25rem), 1fr)); gap: var(--space-s); }
 
 .fac-icon {
   display: grid;

@@ -435,6 +435,7 @@ function facilityView(root, id) {
     k('conf').textContent = st.est.open ? `${t(`level.${st.est.level}`)} · ${t(`fac.confidence.${st.est.confidence}`)}` : t('level.closed');
     k('capN').innerHTML = st.est.open && st.cap ? (st.cap.kind === 'wait' ? `${st.cap.n}<small style="font-size:.5em;color:var(--muted)"> ${t('unit.min')}</small>` : formatNumber(st.cap.n)) : '—';
     const in1h = st.cast.find((p) => p.t - now >= 60 * 60000);
+    if (st.est.open && st.cap && st.cap.kind !== 'wait') $('[data-b="cap"]', root).textContent = `/ ${formatNumber(fac.capacity)} · ${capText(st.cap)}`;
     k('next').innerHTML = in1h && !in1h.closed ? pctText(in1h.pct) : '—';
     k('bestT').textContent = st.best ? (st.best.now ? t('time.now') : formatTime(st.best.t)) : '—';
     k('bestP').textContent = st.best ? `~${Math.round(st.best.pct)}% · ${t(`level.${levelOf(st.best.pct)}`)}` : '';
