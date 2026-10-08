@@ -67,7 +67,7 @@ export function startBackground(canvas) {
     raf = requestAnimationFrame(frame);
     const dt = Math.min(48, now - last);
     last = now;
-    const speed = reduce.matches ? 0.25 : 1;
+    const speed = reduce.matches ? 0.55 : 1;
     t += dt * speed;
     ctx.clearRect(0, 0, w, h);
 
@@ -117,7 +117,7 @@ export function startBackground(canvas) {
       ctx.stroke();
     }
 
-    if (!reduce.matches) {
+    {
       ctx.lineWidth = 0.6;
       const max = 86;
       for (let i = 0; i < particles.length; i++) {

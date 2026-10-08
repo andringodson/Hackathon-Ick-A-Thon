@@ -9,7 +9,8 @@ import { icon, esc, toast, openSheet, closeSheet, initSheet, haptic } from './ui
 
 const DATA = new URL('../../data/', import.meta.url);
 const REPO = 'https://github.com/andringodson/Hackathon-Ick-A-Thon';
-const TICK_MS = 30000;
+const TICK_MS = 5000; // live feel: values glide every few seconds
+const CHART_MS = 30000;
 const NAV = [
   { id: 'home', href: '#/', icon: 'home' },
   { id: 'live', href: '#/live', icon: 'live' },
@@ -31,6 +32,32 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const facName = (f) => t(`facname.${f.id}`);
 const facShort = (f) => t(`facshort.${f.id}`);
 const pctText = (v) => `${Math.round(v)}<small>%</small>`;
+
+/** Count smoothly from the last shown value to the new one. */
+function tween(el, to, fmt = pctText, dur = 900) {
+  if (to == null) {
+    cancelAnimationFrame(el._raf);
+    el._v = null;
+    el.innerHTML = '—';
+    return;
+  }
+  const from = el._v ?? 0;
+  el._v = to;
+  cancelAnimationFrame(el._raf);
+  if (Math.abs(from - to) < 0.5) {
+    el.innerHTML = fmt(to);
+    return;
+  }
+  const start = performance.now();
+  const step = (now) => {
+    const k = Math.min(1, (now - start) / dur);
+    const e = 1 - (1 - k) ** 3;
+    el.innerHTML = fmt(from + (to - from) * e);
+    if (k < 1) el._raf = requestAnimationFrame(step);
+  };
+  el._raf = requestAnimationFrame(step);
+}
+const intText = (v) => `${Math.round(v)}`;
 const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // ---------- state helpers ----------
@@ -74,7 +101,7 @@ function bindFac(root, fac, st) {
   root.dataset.level = lvl;
   for (const el of $$('[data-b]', root)) {
     switch (el.dataset.b) {
-      case 'pct': el.innerHTML = st.est.open ? pctText(st.est.pct) : '—'; break;
+      case 'pct': tween(el, st.est.open ? st.est.pct : null); break;
       case 'levelLabel': el.textContent = t(`level.${lvl}`); break;
       case 'meter': el.style.setProperty('--v', st.est.open ? (st.est.pct / 100).toFixed(3) : 0); break;
       case 'cap': el.textContent = st.est.open ? capText(st.cap) : hoursText(st.change); break;
@@ -130,19 +157,27 @@ function homeView(root) {
 
   root.innerHTML = `
     <section class="hero stagger">
-      <span class="eyebrow" style="--i:0"><span class="dot"></span>${t('home.eyebrow')}</span>
-      <h1 class="h1" style="--i:1">${t('home.title1')}<br /><span class="gradient-text">${t('home.title2')}</span></h1>
-      <p class="lead" style="--i:2">${t('home.lead')}</p>
-      <div class="btn-row" style="--i:3">
-        <a class="btn btn-primary" href="#/live">${icon('live')}${t('action.seeLive')}</a>
-        <a class="btn" href="#/map">${icon('map')}${t('action.openMap')}</a>
-        <button class="btn btn-ghost" type="button" data-action="install" hidden>${icon('download')}${t('action.install')}</button>
+      <div class="hero-copy" style="--i:0">
+        <span class="eyebrow"><span class="dot"></span>${t('home.eyebrow')}</span>
+        <h1 class="h1">${t('home.title1')}<br /><span class="gradient-text">${t('home.title2')}</span></h1>
+        <p class="lead">${t('home.lead')}</p>
+        <div class="btn-row">
+          <a class="btn btn-primary" href="#/live">${icon('live')}${t('action.seeLive')}</a>
+          <a class="btn" href="#/map">${icon('map')}${t('action.openMap')}</a>
+          <button class="btn btn-ghost" type="button" data-action="install" hidden>${icon('download')}${t('action.install')}</button>
+        </div>
       </div>
-      <div class="pulse-strip" style="--i:4">
-        <div class="card stat"><div class="label">${icon('users')}${t('home.pulse')}</div><div class="value" data-home="pulse">${Math.round(pulse)}<small>%</small></div></div>
-        <div class="card stat"><div class="label">${icon('clock')}${t('home.open')}</div><div class="value" data-home="open">${open.length}<small>/${engine.facilities.length}</small></div></div>
-        <div class="card stat" data-level="quiet"><div class="label"><i class="swatch"></i>${t('home.quietCount')}</div><div class="value" data-home="quiet">${open.filter((s) => s.st.est.level === 'quiet').length}</div></div>
-        <div class="card stat" data-level="packed"><div class="label"><i class="swatch"></i>${t('home.packedCount')}</div><div class="value" data-home="packed">${open.filter((s) => s.st.est.level === 'packed').length}</div></div>
+      <div class="card hero-live" style="--i:1">
+        <div class="hl-head"><span class="updated" data-clock>${formatTime(now)}</span><span>${t('home.pulse')} <b data-home="pulse2"></b></span></div>
+        <ul class="hl-list">
+          ${engine.facilities.map((f) => `<li data-fac="${f.id}"><a href="#/f/${f.id}">${icon(f.icon)}<span>${esc(facShort(f))}</span></a><span class="meter"><i data-b="meter"></i></span><span class="hl-pct" data-b="pct"></span></li>`).join('')}
+        </ul>
+      </div>
+      <div class="pulse-strip" style="--i:2">
+        <div class="card stat"><div class="label">${icon('users')}${t('home.pulse')}</div><div class="value" data-home="pulse"></div></div>
+        <div class="card stat"><div class="label">${icon('clock')}${t('home.open')}</div><div class="value" data-home="open"></div></div>
+        <div class="card stat" data-level="quiet"><div class="label"><i class="swatch"></i>${t('home.quietCount')}</div><div class="value" data-home="quiet"></div></div>
+        <div class="card stat" data-level="packed"><div class="label"><i class="swatch"></i>${t('home.packedCount')}</div><div class="value" data-home="packed"></div></div>
       </div>
     </section>
 
@@ -176,20 +211,21 @@ function homeView(root) {
       </div>
     </section>
     ${footer()}`;
-  bindAllCards(root, now);
 
-  return {
-    update() {
-      const n = new Date();
-      bindAllCards(root, n);
-      const st = engine.facilities.map((f) => engine.estimate(f, n)).filter((e) => e.open);
-      const avg = st.length ? st.reduce((a, e) => a + e.pct, 0) / st.length : 0;
-      $('[data-home="pulse"]', root).innerHTML = pctText(avg);
-      $('[data-home="open"]', root).innerHTML = `${st.length}<small>/${engine.facilities.length}</small>`;
-      $('[data-home="quiet"]', root).textContent = st.filter((e) => e.level === 'quiet').length;
-      $('[data-home="packed"]', root).textContent = st.filter((e) => e.level === 'packed').length;
-    },
+  const update = () => {
+    const n = new Date();
+    bindAllCards(root, n);
+    const st = engine.facilities.map((f) => engine.estimate(f, n)).filter((e) => e.open);
+    const avg = st.length ? st.reduce((a, e) => a + e.pct, 0) / st.length : 0;
+    tween($('[data-home="pulse"]', root), avg);
+    tween($('[data-home="pulse2"]', root), avg);
+    tween($('[data-home="open"]', root), st.length, (v) => `${Math.round(v)}<small>/${engine.facilities.length}</small>`);
+    tween($('[data-home="quiet"]', root), st.filter((e) => e.level === 'quiet').length, intText);
+    tween($('[data-home="packed"]', root), st.filter((e) => e.level === 'packed').length, intText);
+    $('[data-clock]', root).textContent = formatTime(n);
   };
+  update();
+  return { update };
 }
 
 function liveView(root) {
@@ -440,10 +476,13 @@ function facilityView(root, id) {
     k('bestT').textContent = st.best ? (st.best.now ? t('time.now') : formatTime(st.best.t)) : '—';
     k('bestP').textContent = st.best ? `~${Math.round(st.best.pct)}% · ${t(`level.${levelOf(st.best.pct)}`)}` : '';
 
-    const curve = engine.dayCurve(fac, now);
     const chartEl = $('[data-chart]', root);
-    if (curve) forecastChart(chartEl, curve, now);
-    else chartEl.innerHTML = `<p class="empty">${hoursText(st.change)}</p>`;
+    if (!chartEl.classList.contains('hovering') && now - (chartEl._at || 0) >= CHART_MS) {
+      chartEl._at = now;
+      const curve = engine.dayCurve(fac, now);
+      if (curve) forecastChart(chartEl, curve, now);
+      else chartEl.innerHTML = `<p class="empty">${hoursText(st.change)}</p>`;
+    }
 
     const feed = engine.reportsFor(fac.id).filter((r) => now - r.at < 45 * 60000).slice(0, 8);
     $('[data-feed]', root).innerHTML = feed.length
@@ -714,10 +753,35 @@ function render(initial = false) {
     syncInstall();
     window.scrollTo({ top: 0, behavior: 'instant' });
     if (!initial) fresh.focus({ preventScroll: true });
+    revealOnScroll(fresh);
+    if (!initial && !document.startViewTransition) {
+      fresh.animate(
+        reduceMotion() ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 0, transform: 'translateY(28px)', filter: 'blur(8px)' }, { opacity: 1, transform: 'none', filter: 'none' }],
+        { duration: 520, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' },
+      );
+    }
     document.title = `${route === 'facility' && engine.byId.get(id) ? facName(engine.byId.get(id)) : t(`nav.${route === 'facility' ? 'live' : route}`)} · Rushcast`;
   };
-  if (!initial && document.startViewTransition && !reduceMotion()) document.startViewTransition(swap);
+  if (!initial && document.startViewTransition) document.startViewTransition(swap);
   else swap();
+}
+
+let revealer = null;
+function revealOnScroll(root) {
+  revealer?.disconnect();
+  if (!('IntersectionObserver' in window)) return;
+  revealer = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (e.isIntersecting) {
+        e.target.classList.add('in');
+        revealer.unobserve(e.target);
+      }
+    }
+  }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+  for (const el of $$('.section, .footer', root)) {
+    el.classList.add('reveal');
+    revealer.observe(el);
+  }
 }
 
 function tick() {
@@ -744,7 +808,7 @@ function toggleTheme() {
     applyThemeColor();
     view?.update?.();
   };
-  if (document.startViewTransition && !reduceMotion()) document.startViewTransition(apply);
+  if (document.startViewTransition) document.startViewTransition(apply);
   else apply();
 }
 
@@ -804,6 +868,15 @@ function bindGlobal() {
     $$('[data-action="install"]').forEach((b) => (b.hidden = true));
   });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+  if (matchMedia('(hover: hover) and (pointer: fine)').matches) {
+    document.addEventListener('pointermove', (e) => {
+      const card = e.target.closest?.('.card');
+      if (!card) return;
+      const r = card.getBoundingClientRect();
+      card.style.setProperty('--mx', `${e.clientX - r.left}px`);
+      card.style.setProperty('--my', `${e.clientY - r.top}px`);
+    }, { passive: true });
+  }
   window.addEventListener('online', () => tick());
   window.addEventListener('offline', () => toast(t('offline'), { type: 'error', duration: 5000 }));
   matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => view?.update?.());
