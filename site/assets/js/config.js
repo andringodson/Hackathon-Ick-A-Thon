@@ -4,4 +4,6 @@
 export const CONFIG = {
   supabaseUrl: '',
   supabaseAnonKey: '',
+  // Optional cloud AI for open-ended questions (see supabase/functions/ask). Empty = on-device only.
+  aiEndpoint: '',
 };

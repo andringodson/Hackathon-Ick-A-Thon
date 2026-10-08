@@ -1,5 +1,7 @@
 // Rushcast app shell: routing, views, live updates, alerts, install, i18n.
 
+import { clock } from './clock.js'; // must run first: provides the demo clock
+
 import { Engine, campusParts, atCampusHour, levelOf } from './engine.js';
 import { createStore } from './store.js';
 import { startBackground } from './bg.js';
@@ -7,6 +9,8 @@ import { forecastChart, sparkline, heatmap, attachTips } from './charts.js';
 import { LANGS, detectLang, setLang, lang, t, formatTime, formatDay, formatDate, formatDateTime, formatHour, formatNumber, relativeMinutes } from './i18n.js';
 import { icon, esc, toast, openSheet, closeSheet, initSheet, haptic } from './ui.js';
 import { initFx, endSplash, redrawLogo, moveChipIndicator, burst, themeReveal } from './fx.js';
+import { mountAssistant } from './assistant.js';
+import { createSession } from './session.js';
 
 const DATA = new URL('../../data/', import.meta.url);
 const REPO = 'https://github.com/andringodson/Hackathon-Ick-A-Thon';
@@ -19,7 +23,7 @@ const NAV = [
   { id: 'insights', href: '#/insights', icon: 'chart' },
   { id: 'about', href: '#/about', icon: 'info' },
 ];
-const CATS = ['all', 'food', 'study', 'services', 'fitness'];
+const CATS = ['all', 'fav', 'food', 'study', 'services', 'fitness'];
 
 let engine;
 let store;
@@ -27,7 +31,215 @@ let view = null; // { route, update?, cleanup? }
 let deferredInstall = null;
 let inAppNav = 0;
 let bg = null; // live background api
-const ui = { cat: 'all', sort: 'quietest', mapStep: 0, mapSel: null };
+let assistant = null;
+let session = null;
+let sessionSheetOpen = false;
+
+// ---------- Live session (multi-device) ----------
+let qrLib = null;
+function loadQr() {
+  if (!qrLib) {
+    qrLib = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
+      s.onload = () => resolve(window.qrcode);
+      s.onerror = reject;
+      document.head.append(s);
+    });
+  }
+  return qrLib;
+}
+async function qrMarkup(text, size = 220) {
+  try {
+    const qrcode = await loadQr();
+    const qr = qrcode(0, 'M');
+    qr.addData(text);
+    qr.make();
+    return qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+  } catch {
+    return `<img alt="" width="${size}" height="${size}" src="https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&margin=8&data=${encodeURIComponent(text)}">`;
+  }
+}
+function activityText(a) {
+  const fac = a.fac && engine.byId.get(a.fac);
+  if (a.type === 'join') return t('session.someoneJoined', { who: a.who });
+  if (a.type === 'report') return t('session.someoneReported', { who: a.who, name: facShort(fac), level: t(['fac.reportEmpty', 'fac.reportModerate', 'fac.reportCrowded'][a.level]) });
+  if (a.type === 'rush') return t('session.rushAlert', { name: facShort(fac) });
+  return '';
+}
+const DEMO_HOURS = [8.5, 13, 16.5, 19];
+function clockHtml() {
+  const cur = clock.active ? campusParts(new Date()).hour : null;
+  return `<div class="session-clock"><strong>${icon('clock', 'h-icon-plain')} ${t('clock.title')}</strong><p class="small muted">${t('clock.sub')}</p>
+    <div class="chips">
+      <button class="chip" type="button" data-clock="live" aria-pressed="${!clock.active}">${t('clock.live')}</button>
+      ${DEMO_HOURS.map((h) => `<button class="chip" type="button" data-clock="${h}" aria-pressed="${cur != null && Math.abs(cur - h) < 0.2}">${formatTime(atCampusHour(new Date(), h))}</button>`).join('')}
+    </div></div>`;
+}
+function setDemoClock(value, broadcast = true) {
+  clock.set(value === 'live' ? 0 : clock.offsetForCampusHour(Number(value)));
+  if (broadcast) session?.clockChanged(clock.offset);
+}
+function sessionSheetHtml() {
+  const st = session.state;
+  if (!st.code) {
+    return `<h2 id="sheet-title">${icon('devices', 'h-icon-plain')} ${t('session.title')}</h2>
+      <p>${t('session.sub')}</p>
+      <button class="btn btn-primary session-wide" type="button" data-session="host">${icon('screen')}${t('session.host')}</button>
+      <p class="small muted session-note">${t('session.hostSub')}</p>
+      <form class="session-join" data-session-join>
+        <label class="small muted" for="room-code">${t('session.joinSub')}</label>
+        <div class="session-join-row">
+          <input id="room-code" name="code" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="${t('session.code')}" />
+          <button class="btn" type="submit">${t('session.join')}</button>
+        </div>
+      </form>
+      ${clockHtml()}`;
+  }
+  const host = st.role === 'host';
+  const open = engine.facilities.filter((f) => engine.isOpen(f, new Date()));
+  return `<h2 id="sheet-title">${icon('devices', 'h-icon-plain')} ${t('session.title')}</h2>
+    <div class="session-grid">
+      ${host ? `<div class="session-qr" data-qr><div class="boot-pulse"></div></div>` : ''}
+      <div class="session-meta">
+        <span class="small muted">${t('session.code')}</span>
+        <div class="session-code">${st.code}</div>
+        <div class="session-live"><span class="dot-live" data-status="${st.status}"></span>${t('session.devices', { n: session.count() })} · ${t(session.transportKind() === 'realtime' ? 'session.realtime' : 'session.relay')}</div>
+        ${host ? `<button class="btn btn-ghost session-copy" type="button" data-session="copy">${icon('copy')}${t('session.copy')}</button>` : ''}
+      </div>
+    </div>
+    <div class="toggle-row">
+      <div><strong>${t(host ? 'session.follow' : 'session.followGuest')}</strong></div>
+      <button class="switch" type="button" role="switch" aria-checked="${st.follow}" data-session="follow" aria-label="${t(host ? 'session.follow' : 'session.followGuest')}"></button>
+    </div>
+    ${host ? `<div class="session-rush"><strong>${t('session.rush')}</strong><p class="small muted">${t('session.rushSub')}</p>
+      <div class="chips">${(open.length ? open : engine.facilities).map((f) => `<button class="chip" type="button" data-rush="${f.id}">${icon(f.icon, 'chip-icon')}${esc(facShort(f))}</button>`).join('')}</div></div>` : ''}
+    ${host ? clockHtml() : ''}
+    <div class="session-activity"><strong>${t('session.activity')}</strong>
+      <ul class="feed">${st.activity.length ? st.activity.slice(0, 6).map((a) => `<li><span>${esc(activityText(a))}</span><time>${relativeMinutes(new Date(a.at))}</time></li>`).join('') : `<li class="empty">${t('session.waiting')}</li>`}</ul>
+    </div>
+    <button class="btn session-wide" type="button" data-session="leave">${icon('x')}${t(host ? 'session.end' : 'session.leave')}</button>`;
+}
+async function renderSessionSheet() {
+  const body = $('[data-sheet-body]');
+  if (!body || !sessionSheetOpen) return;
+  const focusedRush = document.activeElement?.dataset?.rush;
+  body.innerHTML = sessionSheetHtml();
+  if (focusedRush) $(`[data-rush="${focusedRush}"]`, body)?.focus();
+  const qr = $('[data-qr]', body);
+  if (qr) qr.innerHTML = await qrMarkup(session.joinUrl());
+}
+function openSessionSheet() {
+  sessionSheetOpen = true;
+  openSheet('<div></div>', { onClose: () => (sessionSheetOpen = false) });
+  renderSessionSheet();
+}
+function syncClockBadge() {
+  let badge = $('[data-clock-badge]');
+  if (!clock.active) { badge?.remove(); return; }
+  if (!badge) {
+    badge = document.createElement('button');
+    badge.type = 'button';
+    badge.className = 'clock-badge';
+    badge.dataset.clockBadge = '';
+    badge.dataset.action = 'session';
+    $('.top-actions').prepend(badge);
+  }
+  badge.innerHTML = `${icon('clock')}<span>${t('clock.badge', { time: formatTime(new Date()) })}</span>`;
+}
+
+function updateHud() {
+  const st = session.state;
+  const count = $('[data-session-count]');
+  count.hidden = !st.code;
+  count.textContent = session.count();
+  let hud = $('[data-hud]');
+  if (!st.code) { hud?.remove(); return; }
+  if (!hud) {
+    hud = document.createElement('button');
+    hud.type = 'button';
+    hud.className = 'session-hud';
+    hud.dataset.hud = '';
+    hud.dataset.action = 'session';
+    document.body.append(hud);
+  }
+  const host = st.role === 'host';
+  const last = st.activity[0];
+  hud.classList.toggle('host', host);
+  hud.innerHTML = `${host ? '<span class="hud-qr" data-hud-qr></span>' : ''}
+    <span class="hud-text">
+      <span class="hud-top"><span class="dot-live" data-status="${st.status}"></span>${t('session.title')} · <b>${st.code}</b></span>
+      <span class="hud-count">${t('session.devices', { n: session.count() })}</span>
+      ${host && last ? `<span class="hud-last" key="${last.at}">${esc(activityText(last))}</span>` : ''}
+    </span>`;
+  if (host) qrMarkup(session.joinUrl(), 120).then((m) => { const el = $('[data-hud-qr]'); if (el) el.innerHTML = m; });
+}
+function onSessionEvent(type, data) {
+  if (type === 'change') { updateHud(); renderSessionSheet(); return; }
+  const fac = data.fac && engine.byId.get(data.fac);
+  if (type === 'join') { toast(t('session.someoneJoined', { who: data.who }), { type: 'bell' }); haptic(10); }
+  if (type === 'report') { toast(t('session.someoneReported', { who: data.who, name: facShort(fac), level: t(['fac.reportEmpty', 'fac.reportModerate', 'fac.reportCrowded'][data.level]) }), { type: 'bell' }); view?.update?.(); }
+  if (type === 'rush') {
+    toast(t('session.rushAlert', { name: facName(fac) }), { type: 'error', duration: 5000 });
+    haptic(30);
+    view?.update?.();
+    $$(`[data-fac="${data.fac}"]`).forEach((el) => el.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.04)' }, { transform: 'scale(1)' }], { duration: 600, easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)' }));
+  }
+  if (type === 'nav') location.hash = data.hash;
+  if (type === 'ended') toast(t('session.ended'), { type: 'bell' });
+  if (type === 'clock') clock.set(data.offset);
+}
+
+// ---------- favourites ----------
+function favList() {
+  try { return JSON.parse(localStorage.getItem('rc.favs') || '[]'); } catch { return []; }
+}
+const isFav = (id) => favList().includes(id);
+function toggleFav(id, btn) {
+  const list = favList();
+  const on = !list.includes(id);
+  try { localStorage.setItem('rc.favs', JSON.stringify(on ? [...list, id] : list.filter((x) => x !== id))); } catch {}
+  btn?.setAttribute('aria-pressed', String(on));
+  btn?.setAttribute('aria-label', t(on ? 'fav.remove' : 'fav.add'));
+  btn?.querySelector('svg')?.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.45) rotate(18deg)' }, { transform: 'scale(1)' }], { duration: 520, easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)' });
+  haptic(8);
+  toast(t(on ? 'fav.added' : 'fav.removed'), { type: 'bell' });
+}
+
+async function shareFacility(fac) {
+  const est = engine.estimate(fac, new Date());
+  const text = t('share.text', { name: facName(fac), level: t(`level.${est.level}`), pct: est.open ? Math.round(est.pct) : 0 });
+  const url = `${location.origin}${location.pathname}#/f/${fac.id}`;
+  try {
+    if (navigator.share) await navigator.share({ title: 'Rushcast', text, url });
+    else {
+      await navigator.clipboard.writeText(`${text} ${url}`);
+      toast(t('share.copied'));
+    }
+  } catch {}
+}
+
+/** Least crowded places across a free window starting now. */
+function freeSlotHtml(mins) {
+  const now = new Date();
+  const ranked = engine.facilities
+    .map((f) => {
+      const pts = engine.forecast(f, now, Math.max(0.5, mins / 60), 15);
+      const open = pts.filter((p) => !p.closed);
+      if (open.length < pts.length / 2) return null;
+      return { f, avg: open.reduce((a, p) => a + p.pct, 0) / open.length };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.avg - b.avg)
+    .slice(0, 4);
+  if (!ranked.length) return `<p class="empty">${t('free.none')}</p>`;
+  return ranked.map(({ f, avg }, i) => `<a class="card card-link free-item" href="#/f/${f.id}" data-level="${levelOf(avg)}" style="--i:${i}">
+    <span class="fac-icon">${icon(f.icon)}</span>
+    <span class="fac-name"><strong>${esc(facName(f))}</strong><span>${capText(engine.capacityInfo(f, avg))}</span></span>
+    <span class="free-pct">~${Math.round(avg)}%</span>
+  </a>`).join('');
+}
+const ui = { cat: 'all', sort: 'quietest', mapStep: 0, mapSel: null, free: 60 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -191,6 +403,20 @@ function homeView(root) {
     </section>
 
     <section class="section">
+      <div class="section-head"><div><h2 class="h2">${t('free.title')}</h2><p>${t('free.sub')}</p></div>
+        <div class="chips" role="toolbar" data-chips data-free-chips><span class="chip-ind" aria-hidden="true"></span>
+          ${[30, 60, 120].map((m) => `<button class="chip" type="button" data-free="${m}" aria-pressed="${m === ui.free}">${t(`free.m${m}`)}</button>`).join('')}
+        </div>
+      </div>
+      <div class="free-grid stagger" data-free-out>${freeSlotHtml(ui.free)}</div>
+    </section>
+
+    ${favList().length ? `<section class="section">
+      <div class="section-head"><div><h2 class="h2">${icon('star', 'h-icon')} ${t('fav.title')}</h2></div></div>
+      <div class="grid-cards stagger">${favList().map((id) => engine.byId.get(id)).filter(Boolean).map((f, i) => facCard(f, i)).join('')}</div>
+    </section>` : ''}
+
+    <section class="section">
       <div class="section-head"><div><h2 class="h2">${t('home.bestBets')}</h2><p>${t('home.bestBetsSub')}</p></div><a class="btn btn-ghost" href="#/live">${t('action.viewAll')}${icon('next')}</a></div>
       <div class="grid-cards stagger">${(bets.length ? bets : open.slice(0, 3)).map((s, i) => facCard(s.f, i)).join('') || `<p class="empty">${t('level.closed')}</p>`}</div>
     </section>
@@ -221,6 +447,21 @@ function homeView(root) {
     </section>
     ${footer()}`;
 
+  const freeChips = $('[data-free-chips]', root);
+  requestAnimationFrame(() => moveChipIndicator(freeChips, true));
+  root.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-free]');
+    if (!b) return;
+    ui.free = Number(b.dataset.free);
+    $$('[data-free]', root).forEach((c) => c.setAttribute('aria-pressed', String(c === b)));
+    moveChipIndicator(freeChips);
+    const out = $('[data-free-out]', root);
+    out.classList.remove('stagger');
+    void out.offsetWidth;
+    out.innerHTML = freeSlotHtml(ui.free);
+    out.classList.add('stagger');
+  });
+
   const update = () => {
     const n = new Date();
     bindAllCards(root, n);
@@ -240,13 +481,14 @@ function homeView(root) {
 function liveView(root) {
   const render = () => {
     const now = new Date();
-    let list = engine.facilities.filter((f) => ui.cat === 'all' || f.category === ui.cat);
+    const favs = favList();
+    let list = engine.facilities.filter((f) => ui.cat === 'all' || (ui.cat === 'fav' ? favs.includes(f.id) : f.category === ui.cat));
     const pct = new Map(list.map((f) => [f.id, engine.estimate(f, now)]));
     const key = (f) => (pct.get(f.id).open ? pct.get(f.id).pct : 999);
     if (ui.sort === 'quietest') list.sort((a, b) => key(a) - key(b));
     if (ui.sort === 'busiest') list.sort((a, b) => (pct.get(b.id).open ? pct.get(b.id).pct : -1) - (pct.get(a.id).open ? pct.get(a.id).pct : -1));
     if (ui.sort === 'name') list.sort((a, b) => facName(a).localeCompare(facName(b), lang().locale));
-    $('[data-grid]', root).innerHTML = list.map((f, i) => facCard(f, i)).join('');
+    $('[data-grid]', root).innerHTML = list.map((f, i) => facCard(f, i)).join('') || `<div class="card"><p class="empty">${icon('star', 'h-icon')} ${t('fav.add')}</p></div>`;
     bindAllCards(root, now);
   };
 
@@ -258,7 +500,7 @@ function liveView(root) {
     <div class="toolbar">
       <div class="chips" role="toolbar" aria-label="${t('cat.all')}" data-chips>
         <span class="chip-ind" aria-hidden="true"></span>
-        ${CATS.map((c) => `<button class="chip" type="button" data-cat="${c}" aria-pressed="${ui.cat === c}">${t(`cat.${c}`)}</button>`).join('')}
+        ${CATS.map((c) => `<button class="chip" type="button" data-cat="${c}" aria-pressed="${ui.cat === c}">${c === 'fav' ? `${icon('star', 'chip-icon')}${t('fav.title')}` : t(`cat.${c}`)}</button>`).join('')}
       </div>
       <label class="sr-only" for="sort">${t('sort.label')}</label>
       <select class="select" id="sort" data-sort>
@@ -429,6 +671,12 @@ function facilityView(root, id) {
       <div style="--i:1;min-width:0;flex:1 1 14rem"><h1 class="h2">${esc(facName(fac))}</h1><p class="muted">${esc(fac.where)} · <span data-b="hours"></span></p></div>
       <span class="pill" style="--i:2"><span data-b="levelLabel"></span></span>
     </div>
+    <div class="btn-row detail-actions">
+      <button class="btn" type="button" data-fav="${fac.id}" aria-pressed="${isFav(fac.id)}" aria-label="${t(isFav(fac.id) ? 'fav.remove' : 'fav.add')}">${icon('star')}${t('fav.title')}</button>
+      <button class="btn" type="button" data-share="${fac.id}">${icon('share')}${t('share.action')}</button>
+      <button class="btn" type="button" data-showmap="${fac.id}">${icon('pin')}${t('map.show')}</button>
+      <button class="btn" type="button" data-askai="${fac.id}">${icon('spark')}${t('ai.open')}</button>
+    </div>
 
     <div class="grid-kpi stagger" style="margin-block:var(--space-m)" data-fac="${fac.id}">
       <div class="card kpi" style="--i:0"><div class="label">${icon('users')}${t('fac.kpiNow')}</div><div class="value" data-b="pct"></div><div class="sub" data-k="conf"></div><div class="meter"><i data-b="meter"></i></div></div>
@@ -485,7 +733,7 @@ function facilityView(root, id) {
     k('capN').innerHTML = st.est.open && st.cap ? (st.cap.kind === 'wait' ? `${st.cap.n}<small style="font-size:.5em;color:var(--muted)"> ${t('unit.min')}</small>` : formatNumber(st.cap.n)) : '—';
     const in1h = st.cast.find((p) => p.t - now >= 60 * 60000);
     if (st.est.open && st.cap && st.cap.kind !== 'wait') $('[data-b="cap"]', root).textContent = `/ ${formatNumber(fac.capacity)} · ${capText(st.cap)}`;
-    k('next').innerHTML = in1h && !in1h.closed ? pctText(in1h.pct) : '—';
+    k('next').innerHTML = in1h && !in1h.closed ? pctText(in1h.pct) : t('level.closed');
     k('bestT').textContent = st.best ? (st.best.now ? t('time.now') : formatTime(st.best.t)) : '—';
     k('bestP').textContent = st.best ? `~${Math.round(st.best.pct)}% · ${t(`level.${levelOf(st.best.pct)}`)}` : '';
 
@@ -522,6 +770,11 @@ function facilityView(root, id) {
     }
     const sw = e.target.closest('[data-watch]');
     if (sw) toggleWatch(fac, sw);
+    const favBtn = e.target.closest('[data-fav]');
+    if (favBtn) toggleFav(fac.id, favBtn);
+    if (e.target.closest('[data-share]')) shareFacility(fac);
+    if (e.target.closest('[data-showmap]')) { ui.mapSel = fac.id; ui.mapStep = 0; location.hash = '#/map'; }
+    if (e.target.closest('[data-askai]')) assistant?.ask(`${facShort(fac)}?`);
   });
   render();
   return { update: render };
@@ -769,12 +1022,20 @@ function parseRoute() {
   const hash = location.hash.replace(/^#\/?/, '');
   const [first, second] = hash.split('/');
   if (first === 'f' && second) return { route: 'facility', id: decodeURIComponent(second) };
+  if (first === 'join' && second) return { route: 'join', id: decodeURIComponent(second) };
   if (['live', 'map', 'insights', 'about'].includes(first)) return { route: first };
   return { route: 'home' };
 }
 
 function render(initial = false) {
   const { route, id } = parseRoute();
+  if (route === 'join') {
+    session.join(id);
+    toast(t('session.joined', { code: session.state.code }), { type: 'bell' });
+    location.replace('#/');
+    if (initial) render(true);
+    return;
+  }
   const root = $('#view');
   const swap = () => {
     view?.cleanup?.();
@@ -798,7 +1059,11 @@ function render(initial = false) {
     }
     document.title = `${route === 'facility' && engine.byId.get(id) ? facName(engine.byId.get(id)) : t(`nav.${route === 'facility' ? 'live' : route}`)} · Rushcast`;
   };
-  if (!initial && document.startViewTransition) document.startViewTransition(swap);
+  if (!initial && document.startViewTransition) {
+    const vt = document.startViewTransition(swap);
+    // Rapid navigation (e.g. following a presenter) can skip a transition; that's fine.
+    [vt.ready, vt.finished, vt.updateCallbackDone].forEach((p) => p.catch(() => {}));
+  }
   else swap();
 }
 
@@ -884,6 +1149,19 @@ function bindGlobal() {
     if (a?.dataset.action === 'theme') toggleTheme();
     if (a?.dataset.action === 'lang') openLangSheet();
     if (a?.dataset.action === 'install') install();
+    if (a?.dataset.action === 'session') openSessionSheet();
+    const sb = e.target.closest('[data-session]');
+    if (sb) {
+      const act = sb.dataset.session;
+      if (act === 'host') { session.host(); toast(t('session.started', { code: session.state.code })); }
+      if (act === 'leave') { session.leave(); toast(t('session.left')); closeSheet(); }
+      if (act === 'follow') session.setFollow(sb.getAttribute('aria-checked') !== 'true');
+      if (act === 'copy') navigator.clipboard?.writeText(session.joinUrl()).then(() => toast(t('share.copied')));
+    }
+    const ck = e.target.closest('[data-clock]');
+    if (ck) setDemoClock(ck.dataset.clock);
+    const rush = e.target.closest('[data-rush]');
+    if (rush) { session.rush(rush.dataset.rush); burst(rush); }
     const rep = e.target.closest('[data-report]');
     if (rep) openReportSheet(rep.dataset.report);
     const send = e.target.closest('[data-send]');
@@ -893,12 +1171,28 @@ function bindGlobal() {
       setLang(lg.dataset.lang).then(() => {
         closeSheet();
         render();
+        assistant?.relabel();
       });
     }
+  });
+  document.addEventListener('submit', (e) => {
+    const form = e.target.closest('[data-session-join]');
+    if (!form) return;
+    e.preventDefault();
+    const code = form.code.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (code.length !== 6) { toast(t('session.badCode'), { type: 'error' }); return; }
+    session.join(code);
+    toast(t('session.joined', { code }), { type: 'bell' });
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+    const n = Number(e.key);
+    if (n >= 1 && n <= NAV.length) location.hash = NAV[n - 1].href;
   });
   window.addEventListener('hashchange', () => {
     inAppNav++;
     render();
+    session?.navigated(location.hash || '#/');
   });
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
@@ -922,6 +1216,7 @@ function bindGlobal() {
   window.addEventListener('online', () => tick());
   window.addEventListener('offline', () => toast(t('offline'), { type: 'error', duration: 5000 }));
   matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => view?.update?.());
+  addEventListener('rc:clock', () => { syncClockBadge(); render(); pushEnergy(); renderSessionSheet(); });
   const realign = () => { moveIndicator($('[data-nav]'), true); moveIndicator($('[data-tabbar]'), true); };
   window.addEventListener('resize', realign);
   document.fonts?.ready.then(realign);
@@ -943,10 +1238,31 @@ async function boot() {
     return;
   }
   applyThemeColor();
+  session = createSession({ engine, store, onEvent: onSessionEvent, clockOffset: () => clock.offset });
+  session.resume();
+  syncClockBadge();
+  setInterval(syncClockBadge, 30000);
   bindGlobal();
   store.onChange(() => view?.update?.());
   render(true);
   endSplash(bootStart);
+  assistant = mountAssistant({
+    engine,
+    store,
+    t,
+    lang,
+    icon,
+    esc,
+    toast,
+    facName,
+    facShort,
+    capText,
+    hoursText,
+    formatTime,
+    navigate: (hash) => (location.hash = hash),
+    report: (id, level) => store.submit(id, level),
+    watch: (id) => { if (!watching(id)) saveWatch([...watchList(), id]); },
+  });
   pushEnergy();
   setInterval(tick, TICK_MS);
   if ('serviceWorker' in navigator) {

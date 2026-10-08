@@ -13,6 +13,9 @@ const SHELL = [
   'assets/js/ui.js',
   'assets/js/i18n.js',
   'assets/js/fx.js',
+  'assets/js/assistant.js',
+  'assets/js/session.js',
+  'assets/js/clock.js',
   'assets/js/config.js',
   'assets/i18n/en.json',
   'assets/icons/icon.svg',
@@ -61,7 +64,7 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   // Never cache live database traffic.
-  if (url.hostname.endsWith('supabase.co') || url.hostname.endsWith('supabase.in')) return;
+  if (url.hostname.endsWith('supabase.co') || url.hostname.endsWith('supabase.in') || url.hostname === 'ntfy.sh' || url.hostname.endsWith('qrserver.com')) return;
   if (url.origin === self.location.origin) {
     // HTML, code and model data: try the network first so deploys show up at once.
     const fresh = req.mode === 'navigate' || /\.(json|js|css|html|webmanifest)$/.test(url.pathname);

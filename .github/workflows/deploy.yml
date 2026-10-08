@@ -22,6 +22,7 @@ jobs:
     env:
       SUPABASE_URL: ${{ vars.SUPABASE_URL }}
       SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+      AI_ENDPOINT: ${{ vars.AI_ENDPOINT }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
     steps:
       - uses: actions/checkout@v4
@@ -72,6 +73,7 @@ jobs:
           export const CONFIG = {
             supabaseUrl: '${SUPABASE_URL}',
             supabaseAnonKey: '${SUPABASE_ANON_KEY}',
+            aiEndpoint: '${AI_ENDPOINT}',
           };
           EOF
 

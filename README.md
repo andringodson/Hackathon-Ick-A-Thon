@@ -29,6 +29,21 @@ Students and staff walk to the canteen, library or print shop between tight lect
 | **"Alert me when it's quiet"** | System notification through the service worker, one-shot |
 | **Insights for vendors & admin** | Today's peaks, quietest windows, campus heatmap, model accuracy |
 | **Six languages** | English, हिन्दी, தமிழ், മലയാളം, ಕನ್ನಡ, తెలుగు |
+| **Rush AI assistant** | Ask in plain words or by voice: "where can I eat now?", "best time for the canteen?", "library at 6pm?", "I'm free for 30 minutes". Answers come from the live engine, on-device, offline, free. It can also report, set alerts and navigate. Open-ended questions use Chrome's built-in model when present, or an optional cloud function |
+| **Live session (multi-device)** | Present on a big screen with a QR code; phones that scan it join. Reports, simulated rushes, navigation ("follow my screen") and the demo clock sync to every device in real time. Uses Supabase Realtime when connected, otherwise the free ntfy.sh relay |
+| **Demo time** | Jump the whole app (and every connected phone) to 8:30 am, 1 pm, 4:30 pm or 7 pm, so the lunch rush can be shown at any hour |
+| **My places, planner, sharing** | Star favourites, "I'm free for 30 min / 1 h / 2 h" recommendations, share a live status, jump from a place to the map |
+
+### Presenting to judges (2-minute flow)
+
+1. Open the site on the projector laptop → header **devices** icon → **Present on this screen**. A QR code and room code appear.
+2. Judges scan the QR with their phones; the counter shows **N devices live**.
+3. Tap **Demo time → 1:00 pm**: every screen jumps to the lunch rush.
+4. A judge taps **Crowded** on the canteen from their phone; it pops up on the projector and the estimate moves.
+5. Tap **Simulate a rush → Library**: every phone turns the library red with an alert.
+6. Press **/** and ask Rush AI "where can I study now?" — it answers from the live data.
+
+Keyboard: **/** opens Rush AI, **1–5** switch pages, **Esc** closes panels.
 
 ## Architecture
 
@@ -81,6 +96,10 @@ Supabase's free plan is permanent (no card, no trial clock): 500 MB Postgres, re
    SUPABASE_URL=… SUPABASE_SERVICE_KEY=… python ingest/python/ingest_wifi.py --csv export.csv --ap-map ap-map.json
    # or: node ingest/node/ingest-wifi.mjs --csv export.csv --ap-map ap-map.json
    ```
+
+### Optional: cloud AI for open-ended questions
+
+Rush AI works fully on-device. To let it answer free-form questions everywhere, deploy [`supabase/functions/ask`](supabase/functions/ask/index.ts) (`supabase functions deploy ask --no-verify-jwt`, secret `GEMINI_API_KEY` from Google AI Studio's free tier) and set the repo variable `AI_ENDPOINT` to `https://<project>.supabase.co/functions/v1/ask`.
 
 ## Feasibility & limitations
 

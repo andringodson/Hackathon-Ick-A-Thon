@@ -52,6 +52,7 @@ export class Engine {
     this.readings = new Map(); // facility -> { people, ts }
     this.reportsFor = () => [];
     this.simulateSensor = true;
+    this.overrides = new Map(); // facility -> { pct, until } (live-session rush demo)
   }
 
   static async load(base) {
@@ -157,7 +158,9 @@ export class Engine {
       den += w;
       disagreement += Math.abs(v - base);
     }
-    const pct = clamp(num / den, 0, 100);
+    let pct = clamp(num / den, 0, 100);
+    const ov = this.overrides.get(fac.id);
+    if (ov && ov.until > date.getTime()) pct = Math.max(pct, ov.pct);
     const avgGap = reports.length ? disagreement / reports.length : 0;
     const confidence = !sensor && !reports.length ? 'low' : avgGap > 35 || !sensor ? 'medium' : 'high';
     return { open: true, pct, level: levelOf(pct), reports: reports.length, confidence, typical: typ.mean };
