@@ -37,7 +37,10 @@ SLOTS = 24 * 60 // SLOT_MIN  # 96 slots per day
 DAYS = 7
 WEEKS = 10
 TEST_WEEKS = 2
-DECAY = 0.85  # weight multiplier per week of age
+DECAY = 0.85  # default weight multiplier per week of age
+# Hyper-parameters, auto-tuned per facility on every run (walk-forward validation).
+PARAMS = {"decay": DECAY, "kernel": 5}
+GRID = [{"decay": d, "kernel": k} for d in (0.7, 0.8, 0.85, 0.9, 0.95) for k in (3, 5, 7)]
 Z80 = 1.2816  # p10-p90 half width in standard deviations
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -163,14 +166,16 @@ def fetch_real(fac_id: str, cap: int) -> np.ndarray | None:
 # --------------------------------------------------------------------------
 
 def smooth(x: np.ndarray) -> np.ndarray:
-    kernel = np.array([1, 2, 3, 2, 1], dtype=float)
+    k = PARAMS["kernel"]
+    half = k // 2
+    kernel = np.array([min(i + 1, k - i) for i in range(k)], dtype=float)  # triangular
     kernel /= kernel.sum()
-    return np.convolve(np.pad(x, 2, mode="edge"), kernel, mode="valid")
+    return np.convolve(np.pad(x, half, mode="edge"), kernel, mode="valid")
 
 
 def profile(frac: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Recency-weighted mean and spread per (day, slot). frac: (W, D, S), NaN = missing."""
-    weights = DECAY ** np.arange(frac.shape[0])[::-1]
+    weights = PARAMS["decay"] ** np.arange(frac.shape[0])[::-1]
     valid = ~np.isnan(frac)
     wts = weights[:, None, None] * valid
     data = np.nan_to_num(frac)
@@ -220,7 +225,8 @@ def fit(frac: np.ndarray, mask: np.ndarray, flags: np.ndarray) -> dict:
 def backtest(frac: np.ndarray, mask: np.ndarray, flags: np.ndarray) -> dict:
     model = fit(frac[:-TEST_WEEKS], mask, flags[:-TEST_WEEKS])
     errs, naive_errs, inside = [], [], []
-    for k in range(WEEKS - TEST_WEEKS, WEEKS):
+    n = frac.shape[0]
+    for k in range(n - TEST_WEEKS, n):
         for d in range(DAYS):
             actual, prev = frac[k, d], frac[k - 1, d]
             sel = mask[d] & ~np.isnan(actual) & ~np.isnan(prev)
@@ -238,6 +244,19 @@ def backtest(frac: np.ndarray, mask: np.ndarray, flags: np.ndarray) -> dict:
     }
 
 
+def tune(frac: np.ndarray, mask: np.ndarray, flags: np.ndarray) -> dict:
+    """Pick decay + smoothing by walk-forward validation on data the test weeks never touch."""
+    hist, hist_flags = frac[:-TEST_WEEKS], flags[:-TEST_WEEKS]
+    best = None
+    for cand in GRID:
+        PARAMS.update(cand)
+        mae = backtest(hist, mask, hist_flags)["mae"]
+        if best is None or mae < best[0] - 1e-9:
+            best = (mae, dict(cand))
+    PARAMS.update(best[1])
+    return {**best[1], "validation_mae": best[0], "candidates": len(GRID)}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", default=str(ROOT / "site" / "data" / "model.json"))
@@ -251,7 +270,7 @@ def main() -> None:
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "slot_minutes": SLOT_MIN,
         "weeks_of_history": WEEKS,
-        "method": "Recency-weighted seasonal profile (weekday x 15 min) + academic-calendar multipliers, split-conformal p10-p90 band",
+        "method": "Recency-weighted seasonal profile (weekday x 15 min) + academic-calendar multipliers, split-conformal p10-p90 band; decay and smoothing auto-tuned per facility by walk-forward validation",
         "facilities": {},
     }
     sources, all_mae, all_naive, all_cov = set(), [], [], []
@@ -271,6 +290,7 @@ def main() -> None:
             calib = {"people_per_device": round(a, 3), "offset": round(b, 2)}
         sources.add(source)
 
+        tuning = tune(frac, mask, flags)
         metrics = backtest(frac, mask, flags)
         model = fit(frac, mask, flags)
         mean, std = model["mean"], model["std"]
@@ -283,10 +303,11 @@ def main() -> None:
             "metrics": metrics,
             "effects": {k: round(v, 3) for k, v in model["effects"].items()},
             "band_scale": round(model["band_scale"], 3),
+            "tuning": tuning,
             "mean": np.round(np.clip(mean, 0, 1) * 100).astype(int).tolist(),
             "spread": np.round(std * 100).astype(int).tolist(),
         }
-        print(f"{fac['id']:<11} {source:<9} MAE {metrics['mae']:5.2f} pts | naive {metrics['naive_mae']:5.2f} | band coverage {metrics['coverage']}%")
+        print(f"{fac['id']:<11} decay={tuning['decay']} k={tuning['kernel']} | MAE {metrics['mae']:5.2f} pts | naive {metrics['naive_mae']:5.2f} | band coverage {metrics['coverage']}%")
 
     out["source"] = "live" if sources == {"live"} else ("mixed" if "live" in sources else "synthetic")
     out["metrics"] = {
