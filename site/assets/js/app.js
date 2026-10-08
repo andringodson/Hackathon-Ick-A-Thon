@@ -25,6 +25,7 @@ let store;
 let view = null; // { route, update?, cleanup? }
 let deferredInstall = null;
 let inAppNav = 0;
+let bg = null; // live background api
 const ui = { cat: 'all', sort: 'quietest', mapStep: 0, mapSel: null };
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -116,16 +117,17 @@ function bindFac(root, fac, st) {
 
 function facCard(fac, i = 0) {
   return `<a class="card card-link fac-card" href="#/f/${fac.id}" data-fac="${fac.id}" style="--i:${i}">
-    <div class="card-title">
-      <span class="fac-icon">${icon(fac.icon)}</span>
-      <span class="fac-name"><strong>${esc(facName(fac))}</strong><span>${esc(fac.where)}</span></span>
+    <div class="fc-top">
+      <div class="ring-gauge">
+        <svg viewBox="0 0 80 80" aria-hidden="true"><circle class="rg-track" cx="40" cy="40" r="33"/><circle class="rg-val" data-b="meter" cx="40" cy="40" r="33" pathLength="100"/></svg>
+        <span class="rg-num" data-b="pct"></span>
+      </div>
+      <div class="fc-info">
+        <span class="fac-name"><strong>${esc(facName(fac))}</strong><span>${esc(fac.where)}</span></span>
+        <span class="fc-tags"><span class="pill"><span data-b="levelLabel"></span></span><span class="trend small muted" data-b="trend"></span></span>
+      </div>
       ${icon('next', 'card-go')}
     </div>
-    <div class="row">
-      <div class="big-pct" data-b="pct"></div>
-      <div class="row-end"><span class="pill"><span data-b="levelLabel"></span></span><span class="trend small muted" data-b="trend"></span></div>
-    </div>
-    <div class="meter"><i data-b="meter"></i></div>
     <div class="meta">
       <span>${icon('clock')}<span data-b="cap"></span></span>
       <span data-b="best"></span>
@@ -718,10 +720,30 @@ async function checkWatches() {
 }
 
 // ---------- shell ----------
+let navLang = null;
+function moveIndicator(container, instant = false) {
+  const ind = $('.nav-ind, .tab-ind', container);
+  const cur = $('[aria-current="page"]', container);
+  if (!ind || !cur) return;
+  if (instant) ind.style.transition = 'none';
+  ind.style.width = `${cur.offsetWidth}px`;
+  ind.style.transform = `translateX(${cur.offsetLeft}px)`;
+  if (instant) requestAnimationFrame(() => (ind.style.transition = ''));
+}
 function renderNav(route) {
-  const items = NAV.map((n) => ({ ...n, current: n.id === route || (route === 'facility' && n.id === 'live') }));
-  $('[data-nav]').innerHTML = items.map((n) => `<a class="nav-link" href="${n.href}" ${n.current ? 'aria-current="page"' : ''}>${icon(n.icon)}<span>${t(`nav.${n.id}`)}</span></a>`).join('');
-  $('[data-tabbar]').innerHTML = items.map((n) => `<a class="tab" href="${n.href}" ${n.current ? 'aria-current="page"' : ''}>${icon(n.icon)}<span>${t(`nav.${n.id}`)}</span></a>`).join('');
+  const currentId = route === 'facility' ? 'live' : route;
+  const fresh = navLang !== lang().code;
+  if (fresh) {
+    navLang = lang().code;
+    $('[data-nav]').innerHTML = `<span class="nav-ind" aria-hidden="true"></span>${NAV.map((n) => `<a class="nav-link" href="${n.href}" data-id="${n.id}">${icon(n.icon)}<span>${t(`nav.${n.id}`)}</span></a>`).join('')}`;
+    $('[data-tabbar]').innerHTML = `<span class="tab-ind" aria-hidden="true"></span>${NAV.map((n) => `<a class="tab" href="${n.href}" data-id="${n.id}">${icon(n.icon)}<span>${t(`nav.${n.id}`)}</span></a>`).join('')}`;
+  }
+  for (const a of $$('[data-nav] [data-id], [data-tabbar] [data-id]')) {
+    if (a.dataset.id === currentId) a.setAttribute('aria-current', 'page');
+    else a.removeAttribute('aria-current');
+  }
+  moveIndicator($('[data-nav]'), fresh);
+  moveIndicator($('[data-tabbar]'), fresh);
   $('[data-lang-code]').textContent = lang().code.toUpperCase();
   const chip = $('[data-mode-chip]');
   chip.hidden = false;
@@ -747,6 +769,7 @@ function render(initial = false) {
     const fresh = root.cloneNode(false); // drop old listeners
     root.replaceWith(fresh);
     document.body.dataset.route = route;
+    bg?.setRoute(route);
     renderNav(route);
     const views = { home: homeView, live: liveView, map: mapView, insights: insightsView, about: aboutView, facility: (el) => facilityView(el, id) };
     view = { route, ...(views[route](fresh) || {}) };
@@ -784,8 +807,15 @@ function revealOnScroll(root) {
   }
 }
 
+function pushEnergy() {
+  const now = new Date();
+  const open = engine.facilities.map((f) => engine.estimate(f, now)).filter((e) => e.open);
+  bg?.setEnergy(open.length ? open.reduce((a, e) => a + e.pct, 0) / open.length / 100 : 0.15);
+}
+
 function tick() {
   if (document.hidden) return;
+  pushEnergy();
   view?.update?.();
   checkWatches();
 }
@@ -880,10 +910,13 @@ function bindGlobal() {
   window.addEventListener('online', () => tick());
   window.addEventListener('offline', () => toast(t('offline'), { type: 'error', duration: 5000 }));
   matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => view?.update?.());
+  const realign = () => { moveIndicator($('[data-nav]'), true); moveIndicator($('[data-tabbar]'), true); };
+  window.addEventListener('resize', realign);
+  document.fonts?.ready.then(realign);
 }
 
 async function boot() {
-  startBackground($('#flow'));
+  bg = startBackground($('#flow'));
   initSheet();
   try {
     const [, eng] = await Promise.all([setLang(detectLang()), Engine.load(DATA)]);
@@ -898,6 +931,7 @@ async function boot() {
   bindGlobal();
   store.onChange(() => view?.update?.());
   render(true);
+  pushEnergy();
   setInterval(tick, TICK_MS);
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register(new URL('../../sw.js', import.meta.url), { scope: new URL('../../', import.meta.url).pathname }).catch(() => {});

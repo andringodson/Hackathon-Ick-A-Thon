@@ -38,9 +38,6 @@
 </head>
 <body data-route="home">
   <div class="backdrop" aria-hidden="true">
-    <div class="aurora a1"></div>
-    <div class="aurora a2"></div>
-    <div class="aurora a3"></div>
     <canvas id="flow"></canvas>
     <div class="vignette"></div>
   </div>
@@ -48,6 +45,7 @@
   <a class="skip" href="#view">Skip to content</a>
 
   <header class="topbar">
+   <div class="topbar-inner">
     <a class="brand" href="#/" aria-label="Rushcast home">
       <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><use href="#i-logo"></use></svg>
       <span class="brand-name">Rushcast</span>
@@ -67,6 +65,7 @@
         <svg class="only-light" aria-hidden="true"><use href="#i-moon"></use></svg>
       </button>
     </div>
+   </div>
   </header>
 
   <main id="view" class="view" tabindex="-1">
@@ -76,7 +75,7 @@
     </div>
   </main>
 
-  <nav class="tabbar" aria-label="Primary" data-tabbar></nav>
+  <nav class="tabbar" aria-label="Primary"><div class="tabbar-inner" data-tabbar></div></nav>
   <div class="toasts" aria-live="polite" aria-atomic="false"></div>
   <dialog class="sheet" data-sheet aria-labelledby="sheet-title">
     <div class="sheet-handle" data-sheet-handle aria-hidden="true"><span></span></div>
