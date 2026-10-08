@@ -6,4 +6,6 @@ export const CONFIG = {
   supabaseAnonKey: '',
   // Optional cloud AI for open-ended questions (see supabase/functions/ask). Empty = on-device only.
   aiEndpoint: '',
+  // Neural voice for calls and read-aloud (rush-voice-agent on Vercel, free).
+  ttsEndpoint: 'https://rush-voice-agent.vercel.app/api/tts',
 };

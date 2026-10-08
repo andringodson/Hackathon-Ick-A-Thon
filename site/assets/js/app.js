@@ -226,6 +226,19 @@ async function shareFacility(fac) {
   } catch {}
 }
 
+/** Calendar event for a place's best (quietest) time: Google Calendar link + .ics file. */
+function calendarSlot(fac, best, now) {
+  if (!best) return null;
+  const start = best.now ? now : best.t;
+  const end = new Date(start.getTime() + 30 * 60000);
+  const fmt = (d) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const title = t('cal.event', { name: facName(fac) });
+  const details = `${t('best.at', { time: formatTime(start) })} · ~${Math.round(best.pct)}% · ${location.origin}${location.pathname}#/f/${fac.id}`;
+  const google = `https://calendar.google.com/calendar/render?${new URLSearchParams({ action: 'TEMPLATE', text: title, dates: `${fmt(start)}/${fmt(end)}`, details, location: `${facName(fac)}, ${fac.where}` })}`;
+  const icsBody = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Rushcast//EN', 'BEGIN:VEVENT', `UID:${fac.id}-${fmt(start)}@rushcast`, `DTSTAMP:${fmt(new Date())}`, `DTSTART:${fmt(start)}`, `DTEND:${fmt(end)}`, `SUMMARY:${title}`, `DESCRIPTION:${details}`, `LOCATION:${facName(fac)}`, 'BEGIN:VALARM', 'TRIGGER:-PT10M', 'ACTION:DISPLAY', `DESCRIPTION:${title}`, 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  return { google, ics: URL.createObjectURL(new Blob([icsBody], { type: 'text/calendar' })), key: `${fac.id}-${fmt(start)}` };
+}
+
 /** Least crowded places across a free window starting now. */
 function freeSlotHtml(mins) {
   const now = new Date();
@@ -684,6 +697,8 @@ function facilityView(root, id) {
       <button class="btn" type="button" data-share="${fac.id}">${icon('share')}${t('share.action')}</button>
       <button class="btn" type="button" data-showmap="${fac.id}">${icon('pin')}${t('map.show')}</button>
       <button class="btn" type="button" data-askai="${fac.id}">${icon('spark')}${t('ai.open')}</button>
+      <a class="btn" data-gcal target="_blank" rel="noopener">${icon('calendar')}${t('cal.add')}</a>
+      <a class="btn btn-ghost" data-ics download="rushcast-${fac.id}.ics">${icon('download')}.ics</a>
     </div>
 
     <div class="grid-kpi stagger" style="margin-block:var(--space-m)" data-fac="${fac.id}">
@@ -746,6 +761,14 @@ function facilityView(root, id) {
     const in1h = st.cast.find((p) => p.t - now >= 60 * 60000);
     if (st.est.open && st.cap && st.cap.kind !== 'wait') $('[data-b="cap"]', root).textContent = `/ ${formatNumber(fac.capacity)} · ${capText(st.cap)}`;
     k('next').innerHTML = in1h && !in1h.closed ? pctText(in1h.pct) : t('level.closed');
+    const slot = calendarSlot(fac, st.best, now);
+    const gcal = $('[data-gcal]', root);
+    const ics = $('[data-ics]', root);
+    gcal.hidden = ics.hidden = !slot;
+    if (slot) {
+      gcal.href = slot.google;
+      if (ics.dataset.key !== slot.key) { URL.revokeObjectURL(ics.href); ics.href = slot.ics; ics.dataset.key = slot.key; }
+    }
     k('bestT').textContent = st.best ? (st.best.now ? t('time.now') : formatTime(st.best.t)) : '—';
     k('bestP').textContent = st.best ? `~${Math.round(st.best.pct)}% · ${t(`level.${levelOf(st.best.pct)}`)}` : '';
 
@@ -1288,6 +1311,7 @@ async function boot() {
     report: (id, level) => store.submit(id, level),
     watch: (id) => { if (!watching(id)) saveWatch([...watchList(), id]); },
     onCall: () => voice?.call(),
+    speak: (text) => voice?.speak(text),
   });
   voice = createVoice({ t, icon, esc, lang, ask: (q) => assistant.answer(q) });
   pushEnergy();

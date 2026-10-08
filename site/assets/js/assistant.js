@@ -385,7 +385,9 @@ export function mountAssistant(ctx) {
   }
 
   function say(text) {
-    if (!speak || !('speechSynthesis' in window)) return;
+    if (!speak) return;
+    if (ctx.speak) { ctx.speak(text); return; } // natural neural voice
+    if (!('speechSynthesis' in window)) return;
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text.replace(/•/g, ''));
     u.lang = ctx.lang().locale;

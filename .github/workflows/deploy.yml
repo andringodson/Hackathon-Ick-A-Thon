@@ -23,6 +23,7 @@ jobs:
       SUPABASE_URL: ${{ vars.SUPABASE_URL }}
       SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
       AI_ENDPOINT: ${{ vars.AI_ENDPOINT }}
+      TTS_ENDPOINT: ${{ vars.TTS_ENDPOINT }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
     steps:
       - uses: actions/checkout@v4
@@ -77,6 +78,7 @@ jobs:
             supabaseUrl: '${SUPABASE_URL}',
             supabaseAnonKey: '${SUPABASE_ANON_KEY}',
             aiEndpoint: '${AI_ENDPOINT}',
+            ttsEndpoint: '${TTS_ENDPOINT:-https://rush-voice-agent.vercel.app/api/tts}',
           };
           EOF
 

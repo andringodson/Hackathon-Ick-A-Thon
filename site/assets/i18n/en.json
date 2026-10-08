@@ -304,5 +304,7 @@
   "voice.ringMe": "Ring me like a call",
   "voice.ringMeSub": "Alerts arrive as a voice call with a ringtone.",
   "heal.retrying": "That page hit a snag. Fixing it…",
-  "heal.model": "Forecast model updated with the latest data."
+  "heal.model": "Forecast model updated with the latest data.",
+  "cal.add": "Add to Google Calendar",
+  "cal.event": "{name}: quiet time (Rushcast)"
 }
