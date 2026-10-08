@@ -43,6 +43,9 @@ jobs:
       - name: Train forecast model (processing layer)
         run: python pipeline/train.py
 
+      - name: Quality gate (block the deploy if the model got worse)
+        run: python pipeline/quality_gate.py
+
       - name: Smoke-test app code and ingest clients
         run: |
           for f in site/assets/js/*.js site/sw.js ingest/node/*.mjs; do node --check "$f"; done
@@ -76,6 +79,14 @@ jobs:
             aiEndpoint: '${AI_ENDPOINT}',
           };
           EOF
+
+      - name: Install browser test suite
+        run: npm install --prefix tests --no-audit --no-fund
+
+      - name: Self-check suite (pages, Rush AI, voice, translations)
+        run: node tests/run.mjs
+        env:
+          SKIP_SESSION: '1'
 
       - name: Stamp service-worker cache version
         run: sed -i "s/const VERSION = 'rc-v1';/const VERSION = 'rc-${GITHUB_SHA::8}-${GITHUB_RUN_NUMBER}';/" site/sw.js

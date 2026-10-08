@@ -8,3 +8,5 @@ Thumbs.db
 .env.*
 !.env.example
 /shots/
+*.local.mjs
+tests/node_modules/

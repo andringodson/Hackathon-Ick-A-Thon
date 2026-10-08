@@ -1,0 +1,12 @@
+{
+  "name": "rushcast-tests",
+  "private": true,
+  "type": "module",
+  "description": "Self-check suite: pages, Rush AI, voice, translations, live session",
+  "scripts": {
+    "test": "node run.mjs"
+  },
+  "dependencies": {
+    "puppeteer": "^23.11.1"
+  }
+}
