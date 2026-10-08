@@ -1,0 +1,94 @@
+name: Train model & deploy
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 */6 * * *' # retrain every 6 hours (also keeps a free Supabase project active)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pipeline/requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install pipeline dependencies
+        run: pip install -r pipeline/requirements.txt
+
+      - name: Train forecast model (processing layer)
+        run: python pipeline/train.py
+
+      - name: Smoke-test app code and ingest clients
+        run: |
+          for f in site/assets/js/*.js site/sw.js ingest/node/*.mjs; do node --check "$f"; done
+          python ingest/python/ingest_wifi.py --csv ingest/samples/controller-export.csv --dry-run > py.json
+          node ingest/node/ingest-wifi.mjs --csv ingest/samples/controller-export.csv --dry-run > node.json
+          python - <<'PY'
+          import json, datetime as dt
+          norm = lambda r: (r["facility_id"], dt.datetime.fromisoformat(r["ts"].replace("Z", "+00:00")).timestamp(), r["devices"], r["people"])
+          a, b = (sorted(map(norm, json.load(open(f)))) for f in ("py.json", "node.json"))
+          assert a == b and a, "Python and Node ingest clients disagree"
+          for f in __import__("glob").glob("site/assets/i18n/*.json"):
+              json.load(open(f, encoding="utf-8"))
+          print("ingest clients agree on", len(a), "rows; i18n files valid")
+          PY
+          rm py.json node.json
+
+      - name: Supabase housekeeping (when configured)
+        if: env.SUPABASE_URL != '' && env.SUPABASE_SERVICE_KEY != ''
+        run: |
+          curl -fsS -X POST "$SUPABASE_URL/rest/v1/rpc/prune_old" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" -d '{}' && echo "pruned + kept active"
+
+      - name: Write public runtime config
+        if: env.SUPABASE_URL != '' && env.SUPABASE_ANON_KEY != ''
+        run: |
+          cat > site/assets/js/config.js <<EOF
+          export const CONFIG = {
+            supabaseUrl: '${SUPABASE_URL}',
+            supabaseAnonKey: '${SUPABASE_ANON_KEY}',
+          };
+          EOF
+
+      - name: Stamp service-worker cache version
+        run: sed -i "s/const VERSION = 'rc-v1';/const VERSION = 'rc-${GITHUB_SHA::8}-${GITHUB_RUN_NUMBER}';/" site/sw.js
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
